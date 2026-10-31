@@ -1,3 +1,53 @@
+<h1 align="center">CADCraft Elettro</h1>
+
+<p align="center">
+  <b>Estensione open source di CADCraft per schemi e impianti elettrici civili organizzati su più fogli.</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/giorgioGiy/cadcraft-elettro/releases/download/elettro-v0.15.1.1/CADCraft-Elettro-0.15.1.1-Windows-x86_64.exe"><b>Scarica CADCraft Elettro per Windows</b></a>
+  ·
+  <a href="docs/gestione-pagine.md">Gestione pagine</a>
+  ·
+  <a href="docs/modifica-attributi.md">Attributi e calate</a>
+</p>
+
+> [!IMPORTANT]
+> Questa è una versione personalizzata basata su CADCraft 0.15.1. Per non perdere le funzioni
+> elettriche, non installare gli aggiornamenti automatici della versione CADCraft ufficiale:
+> gli aggiornamenti vengono prima integrati e collaudati nel ramo `elettro`.
+
+## Funzioni elettriche aggiunte
+
+- **Gestione pagine (`PAGINE`)** per schemi nei layer numerici `1`, `2`, `3`, ecc.
+- Selezione singola, multipla o di tutte le pagine.
+- Inserimento di una pagina vuota con cartiglio, eliminazione, spostamento e rinumerazione.
+- Modifica in blocco dei dati del cartiglio, con supporto ai formati `att_tav`, `0UNIA3` e `00A3SCHEMI`.
+- Anteprima della pagina selezionata e apertura diretta del foglio.
+- **Stampa delle pagine selezionate in un unico PDF multifoglio**, con il cartiglio bianco reso nero sulla carta.
+- Comandi **Foglio precedente** e **Foglio successivo** per passare rapidamente tra i layer numerici.
+- Editor a due colonne per gli attributi dei blocchi, con **Salva** e **Annulla**.
+- Modifica degli attributi con doppio clic sul blocco.
+- Gestione delle **calate**: il clic apre direttamente i dati della calata scelta, compresi i campi nascosti utilizzati dallo schema.
+- Operazioni protette da Undo e controlli per evitare la perdita del disegno.
+
+## Avvio rapido su Windows
+
+1. Scarica l'eseguibile dalla sezione [Releases](https://github.com/giorgioGiy/cadcraft-elettro/releases).
+2. Avvia `CADCraft-Elettro-0.15.1.1-Windows-x86_64.exe`.
+3. Apri una copia del tuo file DXF.
+4. Digita `PAGINE` nella riga di comando per aprire la gestione dello schema.
+5. Digita `ATTRIBUTI`, oppure fai doppio clic su un blocco, per modificarne i valori.
+
+Il ramo `elettro` è la versione stabile personalizzata. Il ramo `main` resta allineato al progetto
+ufficiale e viene usato come base per integrare con cautela le nuove versioni di CADCraft.
+
+---
+
+## Progetto CADCraft originale
+
+La documentazione seguente descrive CADCraft, il progetto open source sul quale CADCraft Elettro è basato.
+
 <p align="center">
   <a href="https://getartcraft.com/">
     <picture>
