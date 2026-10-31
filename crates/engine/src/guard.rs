@@ -44,6 +44,24 @@ impl Guarded {
 }
 
 impl Interactive for Guarded {
+    fn editing_attributes(&self) -> Option<cadcraft_doc::Handle> {
+        if self.broken.get().is_some() {
+            return None;
+        }
+        catch_unwind(AssertUnwindSafe(|| self.inner.editing_attributes())).unwrap_or_else(|_| {
+            self.broken.set(Some("panic in attribute editor"));
+            None
+        })
+    }
+    fn editing_attributes_pick(&self) -> Option<Vec2> {
+        if self.broken.get().is_some() {
+            return None;
+        }
+        catch_unwind(AssertUnwindSafe(|| self.inner.editing_attributes_pick())).unwrap_or_else(|_| {
+            self.broken.set(Some("panic in attribute editor pick"));
+            None
+        })
+    }
     fn name(&self) -> &'static str {
         self.inner.name()
     }

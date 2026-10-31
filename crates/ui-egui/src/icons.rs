@@ -16,6 +16,8 @@ pub enum Icon {
     SaveAs,
     Undo,
     Redo,
+    SheetPrevious,
+    SheetNext,
     Plot,
     Publish,
     PageSetup,
@@ -269,6 +271,11 @@ fn paint_file_view(pen: &Pen<'_>, icon: Icon, b: Color32, a: Color32, _dim: bool
         Redo => {
             pen.arc(12.0, 13.0, 7.0, 30.0, 220.0, b);
             pen.arrow_tip(19.0, 9.0, 1.0, 2.5, b);
+        }
+        SheetPrevious | SheetNext => {
+            pen.rect(6.0, 3.0, 12.0, 18.0, b);
+            let points = if icon == SheetPrevious { [(14.0, 8.0), (10.0, 12.0), (14.0, 16.0)] } else { [(10.0, 8.0), (14.0, 12.0), (10.0, 16.0)] };
+            pen.poly(&points, false, a);
         }
         Plot | Preview => {
             pen.rect(4.0, 9.0, 16.0, 8.0, b);

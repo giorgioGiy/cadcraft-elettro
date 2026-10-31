@@ -452,6 +452,16 @@ impl Session {
         self.running.as_ref().and_then(|r| r.machine.editing_mtext())
     }
 
+    /// Block reference whose attribute values are being edited by the running command.
+    pub fn editing_attributes(&self) -> Option<Handle> {
+        self.running.as_ref().and_then(|r| r.machine.editing_attributes())
+    }
+
+    /// Drawing point used to pick the block returned by [`Self::editing_attributes`].
+    pub fn editing_attributes_pick(&self) -> Option<Vec2> {
+        self.running.as_ref().and_then(|r| r.machine.editing_attributes_pick())
+    }
+
     pub fn current_prompt(&self) -> Option<Prompt> {
         if let Some(p) = self.lisp_prompt() {
             return Some(p);

@@ -61,6 +61,22 @@ fn attedit_asks_for_a_block_then_each_value() {
 }
 
 #[test]
+fn clicking_attribute_text_selects_its_block_for_the_editor() {
+    let mut s = with_block();
+    let h = handle(&insert(&mut s, 100.0, json!({})));
+    let d = s.doc().unwrap();
+    let EntityKind::Insert(ins) = &d.entity(h).unwrap().kind else { panic!("not a block") };
+    let a = ins.attribs.first().unwrap();
+    let center = cadcraft_render::place_text_entity(d, &a.text, &a.text.value).1.center();
+    assert_eq!(cadcraft_engine::select::pick(d, &cadcraft_doc::Space::Model, center, 0.05), Some(h));
+    s.start("attributi").unwrap();
+    s.input(cadcraft_engine::Input::Point(center)).unwrap();
+    assert_eq!(s.editing_attributes(), Some(h));
+    s.cancel();
+    assert!(s.editing_attributes().is_none());
+}
+
+#[test]
 fn dash_attedit_global_replaces_a_string_in_matching_attributes() {
     let mut s = with_block();
     let a = handle(&insert(&mut s, 100.0, json!({"T": "A-1", "U": "A-9"})));

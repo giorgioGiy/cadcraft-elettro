@@ -4,6 +4,7 @@
 
 use cadcraft_doc::color::Color;
 use cadcraft_doc::{AttribProps, Common, EntityKind, HAlign, Handle, Text, VAlign};
+use cadcraft_geom::Vec2;
 use serde_json::{Map, Value, json};
 
 use crate::cmd::curves::KW;
@@ -18,7 +19,7 @@ const MAX_VALUE: usize = 65_536;
 pub(super) fn attedit_spec() -> CommandSpec {
     CommandSpec::new("attedit", "Single...", run)
         .menu(&["Modify", "Object", "Attribute", "Single..."])
-        .alias(&["ate", "eattedit"])
+        .alias(&["ate", "eattedit", "attributi", "calata", "editacalata"])
         .params("{handle, values: {TAG: value} (tags in any case)} → {changed, unknownTags?}")
         .interactive(|_| Ok(Box::new(AtteditM::default())))
 }
@@ -217,6 +218,8 @@ fn run_global(s: &mut Session, p: &Value) -> Result<Value> {
 #[derive(Default)]
 struct AtteditM {
     block: Option<Handle>,
+    /// Drawing point of the single click that selected `block`.
+    picked_at: Option<Vec2>,
     /// Index, tag and current value of each editable attribute of the picked block reference.
     attribs: Vec<(usize, String, String)>,
     /// The values answered so far, in attribute order.
@@ -236,6 +239,7 @@ impl AtteditM {
                 continue;
             }
             self.block = Some(*h);
+            self.picked_at = (s.cursor.x.is_finite() && s.cursor.y.is_finite()).then_some(s.cursor);
             self.attribs = atts;
             return Ok(());
         }
@@ -244,6 +248,12 @@ impl AtteditM {
 }
 
 impl Interactive for AtteditM {
+    fn editing_attributes(&self) -> Option<Handle> {
+        self.values.is_empty().then_some(self.block).flatten()
+    }
+    fn editing_attributes_pick(&self) -> Option<Vec2> {
+        self.values.is_empty().then_some(self.picked_at).flatten()
+    }
     fn name(&self) -> &'static str {
         "ATTEDIT"
     }

@@ -246,6 +246,15 @@ pub trait Interactive: Send {
     fn editing_mtext(&self) -> Option<cadcraft_doc::MText> {
         None
     }
+    /// Block reference whose attribute values are awaiting input. Front ends may offer a form.
+    fn editing_attributes(&self) -> Option<Handle> {
+        None
+    }
+    /// Drawing point used to pick the block whose attributes are being edited.  Electrical
+    /// front ends use it to open the repeated apparatus column under the cursor.
+    fn editing_attributes_pick(&self) -> Option<Vec2> {
+        None
+    }
 }
 
 /// See [`Interactive::drag`].

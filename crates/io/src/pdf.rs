@@ -14,7 +14,7 @@
 
 use std::fmt::Write as _;
 
-use cadcraft_color::Rgb;
+use cadcraft_color::{Color, Rgb};
 use cadcraft_doc::{Drawing, Handle, PageSetup, Space};
 use cadcraft_geom::{Bounds2, Vec2};
 use cadcraft_render::{DPrim, Kind, Sheet, clip, paper};
@@ -221,6 +221,10 @@ pub fn plot(d: &Drawing, space: &Space, opts: &Value) -> Result<Vec<u8>> {
     // `layouts: [name | "Model"] | "all"` plots those sheets into one file, one page each,
     // instead of `space`; "all" = Model if it has objects, then the layouts in tab order.
     let o = PdfOptions::from_json(opts);
+    // Numeric model-space layer sheets, each with the common layers, in one PDF.
+    if let Some(names) = opts.get("sheetLayers") {
+        return pdf_layer_sheets(d, names, opts.get("paperBlackLayers"), &o);
+    }
     // `pages: [{window: [[x1,y1],[x2,y2]], paper?, landscape?, scale?}]` plots model space once
     // per window, one page each (a book of sheet frames), instead of `space`.
     if let Some(pages) = opts.get("pages") {
@@ -270,6 +274,96 @@ pub fn plot(d: &Drawing, space: &Space, opts: &Value) -> Result<Vec<u8>> {
         }
         None => pdf(d, space, &o),
     }
+}
+
+fn sheet_number(name: &str) -> bool {
+    name.parse::<u64>().ok().is_some_and(|n| n > 0 && n.to_string() == name)
+}
+
+fn pdf_layer_sheets(d: &Drawing, names: &Value, black_layers: Option<&Value>, o: &PdfOptions) -> Result<Vec<u8>> {
+    let names = names
+        .as_array()
+        .filter(|a| !a.is_empty() && a.len() <= MAX_PAGES)
+        .ok_or_else(|| IoError::Format(format!("sheetLayers must contain 1 to {MAX_PAGES} numeric layer names")))?;
+    let names = names
+        .iter()
+        .map(|name| {
+            name.as_str()
+                .filter(|name| sheet_number(name) && d.layer(name).is_some())
+                .ok_or_else(|| IoError::Format("sheetLayers contains an invalid or missing numeric layer".into()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut drawing = d.clone();
+    // An electrical title's white layer must remain readable on white paper. This override
+    // is confined to the plotting copy and leaves other whites (e.g. masks) unchanged.
+    if let Some(raw) = black_layers {
+        let layers = raw
+            .as_array()
+            .filter(|a| a.len() <= MAX_LAYERS)
+            .ok_or_else(|| IoError::Format("paperBlackLayers must be a bounded list of layer names".into()))?;
+        for name in layers {
+            let name = name.as_str().ok_or_else(|| IoError::Format("paperBlackLayers needs layer names".into()))?;
+            if let Some(layer) = drawing.layers.iter_mut().find(|l| l.name.eq_ignore_ascii_case(name))
+                && matches!(layer.color, Color::Index(255) | Color::True(Rgb(255, 255, 255)))
+            {
+                layer.color = Color::Index(7);
+            }
+        }
+    }
+    // All selected layers must start visible in the PDF's shared optional-content groups.
+    for layer in &mut drawing.layers {
+        if names.contains(&layer.name.as_str()) {
+            layer.on = true;
+        }
+    }
+    match write_layer_sheets(&drawing, &names, o, o.text_as_geometry) {
+        Err(Failure::Write(e)) if !o.text_as_geometry && font_failure(&e) => write_layer_sheets(&drawing, &names, o, true).map_err(Failure::into_io),
+        result => result.map_err(Failure::into_io),
+    }
+}
+
+/// Write numeric model-space layer sheets one page at a time. Each page freezes the other
+/// numeric sheet layers in its private drawing copy; the caller's drawing is never changed.
+fn write_layer_sheets(d: &Drawing, names: &[&str], o: &PdfOptions, text_as_geometry: bool) -> std::result::Result<Vec<u8>, Failure> {
+    write::guard(|| {
+        let links = all_links(d, o);
+        let title = if o.title.is_empty() { names.first().map_or_else(String::new, |name| (*name).to_string()) } else { o.title.clone() };
+        let metadata = Metadata {
+            creator: "CADCraft".into(),
+            producer: "CADCraft".into(),
+            title: Some(title.chars().take(MAX_TEXT).collect()),
+            ..Metadata::default()
+        };
+        let settings = kr::SerializeSettings {
+            compress_content_streams: o.compress,
+            xmp_metadata: false,
+            enable_tagging: false,
+            ..kr::SerializeSettings::default()
+        };
+        let mut writer = Writer::new(settings, metadata);
+        let mut fonts = fonts::Fonts::new(!text_as_geometry);
+        let mut groups = Groups::default();
+        for name in names {
+            let mut page_drawing = d.clone();
+            for layer in &mut page_drawing.layers {
+                if sheet_number(&layer.name) {
+                    layer.frozen = layer.name != *name;
+                    if layer.name == *name {
+                        layer.on = true;
+                    }
+                }
+            }
+            let mut page = sheet(&page_drawing, &Space::Model, o, &links)?;
+            page.label = (*name).to_string();
+            let document = writer.document_mut();
+            groups.add(document, d, &page.layers);
+            write_page(document, &page, &groups, &mut fonts)?;
+        }
+        if names.len() == 1 && !groups.ids.is_empty() {
+            writer.document_mut().set_optional_content_page_mode(true);
+        }
+        Ok(writer.finish()?)
+    })
 }
 
 /// `[{handle: "1A" | 26, url}]` → (handle, url) pairs; malformed entries are skipped.

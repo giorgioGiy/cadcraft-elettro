@@ -29,6 +29,60 @@ fn add_line(d: &mut Drawing, space: &Space, layer: &str, a: (f64, f64), b: (f64,
     d.add(space, Common { layer: layer.into(), ..Default::default() }, line).unwrap()
 }
 
+fn marked_groups(page: &crate::pdf_read::Page) -> Vec<String> {
+    marks(&page.content).into_iter().filter_map(|mark| page.properties.iter().find(|(key, _)| *key == mark).map(|(_, group)| group.clone())).collect()
+}
+
+#[test]
+fn numeric_sheets_share_one_pdf_without_overlapping_or_hiding_pages() {
+    let mut d = Drawing::new_metric();
+    for name in ["1", "2", "3", "COMMON"] {
+        d.layers.push(Layer::new(name));
+        add_line(&mut d, &Space::Model, name, (0.0, 0.0), (100.0, 10.0));
+    }
+    d.layer_mut("1").unwrap().on = false;
+    d.layer_mut("3").unwrap().frozen = true;
+    let before = d.clone();
+    let doc = read(&plot(&d, &Space::Model, &json!({"sheetLayers":["1","3"],"compress":false,"fit":true})).unwrap());
+    assert_eq!(doc.pages.len(), 2);
+    let first = marked_groups(&doc.pages[0]);
+    let second = marked_groups(&doc.pages[1]);
+    assert!(first.contains(&"1".into()) && first.contains(&"COMMON".into()));
+    assert!(!first.contains(&"2".into()) && !first.contains(&"3".into()));
+    assert!(second.contains(&"3".into()) && second.contains(&"COMMON".into()));
+    assert!(!second.contains(&"1".into()) && !second.contains(&"2".into()));
+    assert!(doc.ocgs.iter().all(|group| !group.off));
+    assert_eq!(d, before);
+    for names in [json!([]), json!(["99"]), json!(["01"]), json!(["COMMON"]), json!([null]), json!(vec!["1"; 257])] {
+        assert!(plot(&d, &Space::Model, &json!({"sheetLayers":names})).is_err());
+    }
+}
+
+#[test]
+fn white_title_layer_prints_black_without_changing_the_drawing_or_other_white_layers() {
+    use cadcraft_color::Rgb;
+    for color in [Color::Index(255), Color::True(Rgb(255, 255, 255))] {
+        let mut d = Drawing::new_metric();
+        d.layers.push(Layer::new("1"));
+        d.layers.push(Layer { name: "CARTIGLIO_ATTRIBUTI".into(), color, ..Layer::default() });
+        d.layers.push(Layer { name: "WHITE".into(), color, ..Layer::default() });
+        add_line(&mut d, &Space::Model, "CARTIGLIO_ATTRIBUTI", (0.0, 0.0), (100.0, 0.0));
+        add_line(&mut d, &Space::Model, "WHITE", (0.0, 10.0), (100.0, 10.0));
+        let before = d.clone();
+        let options = json!({"sheetLayers":["1"],"paperBlackLayers":["cartiglio_attributi"],"compress":false});
+        let doc = read(&plot(&d, &Space::Model, &options).unwrap());
+        let page = &doc.pages[0];
+        let operations = pdf_read::ops(&page.content);
+        for (group, expected) in [("CARTIGLIO_ATTRIBUTI", [0.0, 0.0, 0.0]), ("WHITE", [1.0, 1.0, 1.0])] {
+            let property = page.properties.iter().find(|(_, name)| name == group).map(|(key, _)| key).unwrap();
+            let start = operations.iter().position(|op| op.op == "BDC" && op.names.get(1) == Some(property)).unwrap();
+            let colour = operations[start..].iter().find(|op| op.op == "RG").unwrap();
+            assert_eq!(colour.nums, expected);
+        }
+        assert_eq!(d, before);
+    }
+}
+
 /// Lines on layers "0", "Walls" (red), "Notes" (off) and "Hidden" (frozen), and a block
 /// reference on "Doors" whose contents are on layer 0.
 fn layered() -> Drawing {

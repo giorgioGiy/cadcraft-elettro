@@ -119,6 +119,7 @@ mod selection_modes;
 mod setvar_cecolor;
 mod setvar_coverage;
 mod shapes;
+mod sheet_manager;
 mod snap_annotations;
 mod snap_blocks;
 mod snap_curves;

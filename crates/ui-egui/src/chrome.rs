@@ -18,6 +18,11 @@ const TOOLBAR: &[&[(Icon, &str, &str, Option<&str>)]] = &[
     ],
     &[(Icon::Undo, "u", "Undo", Some("Cmd+Z")), (Icon::Redo, "redo", "Redo", Some("Cmd+Shift+Z"))],
     &[
+        (Icon::SheetPrevious, "sheet.previous", "Foglio precedente", None),
+        (Icon::SheetNext, "sheet.next", "Foglio successivo", None),
+        (Icon::Table, "pagine", "Gestione pagine", None),
+    ],
+    &[
         (Icon::Plot, "plot", "Print", None),
         (Icon::Publish, "publish", "Batch Publish", None),
         (Icon::PageSetup, "pagesetup", "Page Setup Manager", None),
@@ -35,6 +40,7 @@ const TOOLBAR: &[&[(Icon, &str, &str, Option<&str>)]] = &[
         (Icon::Properties, "ui.toggle.palettes", "Properties", None),
         (Icon::Layers, "ui.dialog.layers", "Layer Properties Manager", None),
         (Icon::Blocks, "ui.dialog.blocks", "Blocks", None),
+        (Icon::AttDef, "attedit", "Modifica attributi del blocco", None),
     ],
     &[(Icon::Measure, "dist", "Measure Distance", None), (Icon::List, "list", "List", None), (Icon::Area, "area", "Area", None)],
     &[(Icon::Help, "ui.dialog.about", "Help", None)],

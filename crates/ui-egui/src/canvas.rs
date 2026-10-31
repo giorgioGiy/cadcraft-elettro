@@ -562,6 +562,24 @@ fn handle_double_click(app: &mut CadApp, ctx: DoubleClickContext<'_>) -> Option<
             return None;
         }
     }
+    // Attribute text belongs to its block reference. Open the transactional ATTEDIT form for
+    // the block before the generic text editor gets a chance to consume the double-click.
+    if inside
+        && double
+        && app.session.running.is_none()
+        && let Some(hp) = hover
+    {
+        let world = xf.to_world(hp);
+        if let Some(handle) = attributed_block_at(app, world, scale) {
+            app.session.cursor = world;
+            app.start("attedit");
+            if let Err(error) = app.session.input(Input::Pick(vec![handle])) {
+                app.session.echo(error.to_string());
+            }
+            return None;
+        }
+    }
+
     // Double-click text to edit it, as in AutoCAD: TEXTEDIT with that object already picked.
     if inside
         && double
@@ -587,6 +605,61 @@ fn handle_double_click(app: &mut CadApp, ctx: DoubleClickContext<'_>) -> Option<
     }
 
     Some(hatch_dialog)
+}
+
+/// Block reference with at least one non-constant attribute under `w`.
+fn attributed_block_at(app: &CadApp, w: Vec2, scale: f64) -> Option<Handle> {
+    let st = app.session.state().ok()?;
+    let aperture = app.session.settings.pickbox.max(1.0) * 1.5 / scale.max(1e-12);
+    let h = cadcraft_engine::select::pick(&st.doc, &st.edit_space(), w, aperture)?;
+    match &st.doc.entity(h)?.kind {
+        cadcraft_doc::EntityKind::Insert(insert) if insert.attribs.iter().any(|attribute| !attribute.constant) => Some(h),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod attributed_block_tests {
+    use cadcraft_engine::Session;
+    use serde_json::json;
+
+    use crate::{CadApp, Services};
+
+    use super::{DoubleClickContext, Vec2, Xf, attributed_block_at, handle_double_click};
+
+    #[test]
+    fn double_clicking_an_attributed_block_opens_its_attribute_form() {
+        let mut app = CadApp::new(Session::new(), Services::default());
+        app.run("attdef", json!({"tag": "U_DEN", "default": "Motore", "at": [0, 0]})).unwrap();
+        let source: Vec<_> = app.session.doc().unwrap().model.iter().map(|entity| entity.handle.hex()).collect();
+        app.run("block", json!({"name": "CALATA", "base": [0, 0], "handles": source, "keep": "delete"})).unwrap();
+        let inserted = app.run("insert", json!({"name": "CALATA", "at": [0, 0]})).unwrap();
+        let handle = cadcraft_doc::Handle::parse_hex(inserted["handle"].as_str().unwrap()).unwrap();
+        let point = Vec2::new(0.0, 0.0);
+        assert_eq!(attributed_block_at(&app, point, 20.0), Some(handle));
+
+        let xf = Xf { rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)), center: point, scale: 20.0 };
+        let viewport = None;
+        let clip = None;
+        let result = handle_double_click(
+            &mut app,
+            DoubleClickContext {
+                inside: true,
+                double: true,
+                hover: Some(xf.to_screen(point)),
+                xf,
+                xf_paper: xf,
+                scale: xf.scale,
+                active_viewport: &viewport,
+                active_clip: &clip,
+            },
+        );
+
+        assert_eq!(result, None);
+        assert_eq!(app.session.editing_attributes(), Some(handle));
+        let picked = app.session.editing_attributes_pick().unwrap();
+        assert!(picked.dist(point) < 1e-9, "picked {picked:?}, expected {point:?}");
+    }
 }
 
 fn update_canvas_cursor(

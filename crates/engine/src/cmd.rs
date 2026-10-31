@@ -38,6 +38,8 @@ pub(crate) use props::{current_color_value, set_current_color_value};
 mod qselect;
 mod selecttools;
 mod settings;
+mod sheet_manage;
+mod sheets;
 mod spline_opts;
 mod table;
 mod tolerance;
@@ -196,6 +198,8 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(gripcmds::specs());
         v.extend(file::compare::specs());
         v.extend(layer::specs());
+        v.extend(sheets::specs());
+        v.extend(sheet_manage::specs());
         v.extend(layout::specs());
         v.extend(exchange::specs());
         v.extend(props::specs());

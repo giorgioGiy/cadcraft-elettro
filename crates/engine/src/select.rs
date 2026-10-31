@@ -114,6 +114,29 @@ pub fn entity_distance(d: &Drawing, e: &Entity, p: Vec2, tol: f64) -> f64 {
 /// edges and the lines.
 fn in_text(d: &Drawing, e: &Entity, p: Vec2) -> bool {
     match &e.kind {
+        EntityKind::Insert(ins) => {
+            let mode = d.header.i64("ATTMODE", 1);
+            mode != 0
+                && ins.attribs.iter().any(|a| {
+                    if a.invisible && mode != 2 {
+                        return false;
+                    }
+                    let def = d
+                        .block(&ins.block)
+                        .and_then(|b| b.entities.iter().find(|be| matches!(&be.kind, EntityKind::AttDef(ad) if ad.tag.eq_ignore_ascii_case(&a.tag))));
+                    let mut common = a.props.over(&def.map(|be| be.common.clone()).unwrap_or_default());
+                    if common.layer == "0" {
+                        common.layer = e.common.layer.clone();
+                    }
+                    if d.layer(&common.layer).is_some_and(|layer| !layer.visible()) {
+                        return false;
+                    }
+                    match a.multiline_text() {
+                        Some(text) => in_box(cadcraft_render::layout_mtext_entity(d, &text).strokes.into_iter().flatten(), text.rotation, p),
+                        None => cadcraft_render::place_text_entity(d, &a.text, &a.text.value).1.contains(p),
+                    }
+                })
+        }
         // A dimension with a block (as AutoCAD saves them) is drawn from that block: its text is
         // the text there, not the text the dimension's own geometry would place.
         EntityKind::Dimension(dm) => match dm.block.as_ref().and_then(|n| d.block(n)) {

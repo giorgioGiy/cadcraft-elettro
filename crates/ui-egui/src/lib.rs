@@ -19,6 +19,7 @@ pub const UPDATE_APP: craft_update::app::App = craft_update::app::App {
 
 pub mod aliasdlg;
 pub mod animation;
+mod attribute_editor;
 pub mod autosave;
 pub mod bedit;
 pub mod canvas;
@@ -34,6 +35,7 @@ pub mod dialogs;
 pub mod docking;
 pub mod hatchdlg;
 mod mtext_editor;
+mod page_manager;
 mod panel_state;
 pub mod spacemouse;
 pub mod switch;

@@ -15,6 +15,9 @@ const RECENT_CLEAR: &str = "ui.recent.clear";
 
 /// UI-only commands: (id, label, menu path, shortcut).
 pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
+    ("pagine", "Gestione pagine...", &["View", "Fogli", "Gestione pagine..."], None),
+    ("gestionepagine", "Gestione pagine", &[], None),
+    ("ui.dialog.pages", "Gestione pagine", &[], None),
     ("ui.spacemouse", "3D Mouse...", &["Tools", "3D Mouse..."], None),
     ("ui.spacemouse.calibrate", "Calibrate 3D Mouse", &[], None),
     ("ui.spacemouse.navigate", "3D Mouse Navigation", &[], None),
@@ -302,7 +305,22 @@ fn user_qsave(app: &mut CadApp) -> Option<Result<Value, String>> {
     app.hold_lossy_save().then_some(Ok(Value::Null))
 }
 
+fn run_page_manager_command(app: &mut CadApp, id: &str) -> Option<Result<Value, String>> {
+    if !matches!(id, "pagine" | "gestionepagine" | "ui.dialog.pages") {
+        return None;
+    }
+    if app.session.state().is_err() {
+        return Some(Err("Aprire prima un disegno".into()));
+    }
+    app.session.cancel();
+    app.ui.dialog = Some("pages".into());
+    Some(Ok(Value::Null))
+}
+
 fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Result<Value, String>> {
+    if let Some(result) = run_page_manager_command(app, id) {
+        return Some(result);
+    }
     if let Some(result) = route_ui_subsystems(app, id, params) {
         return Some(result);
     }
