@@ -39,6 +39,15 @@ fn drafting_settings_menu_opens_the_dialog() {
     assert_eq!(app.session.settings.gridmajor, 10);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn symbol_library_command_opens_the_dialog() {
+    let (mut app, picks) = app();
+    app.cmdline("SIMBOLI");
+    assert_eq!(app.ui.dialog.as_deref(), Some("symbols"));
+    assert_eq!(picks.get(), 0, "opening the window must not open a file picker");
+}
+
 #[test]
 fn properties_menu_shows_the_palette() {
     let (mut app, _) = app();

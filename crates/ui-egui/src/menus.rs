@@ -63,6 +63,12 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("ui.start", "Start", &["Window", "Start"], None),
     ("ui.dialog.layers", "Layer Properties Manager", &["Window", "Layers"], None),
     ("ui.dialog.blocks", "Blocks", &["Window", "Blocks"], None),
+    #[cfg(not(target_arch = "wasm32"))]
+    ("simboli", "Symbol Library...", &["Insert", "Symbol Library..."], None),
+    #[cfg(not(target_arch = "wasm32"))]
+    ("libreriasimboli", "Symbol Library...", &[], None),
+    #[cfg(not(target_arch = "wasm32"))]
+    ("ui.dialog.symbols", "Symbol Library...", &[], None),
     ("ui.dialog.qselect", "Quick Select...", &[], None),
     ("ui.dialog.parameters", "Parameters Manager", &["Window", "Parameters Manager"], None),
     ("ui.dialog.dsettings", "Drafting Settings...", &[], None),
@@ -94,6 +100,10 @@ fn route_ui_subsystems(app: &mut CadApp, id: &str, params: &Value) -> Option<Res
     }
     if let Some(r) = crate::xrefs::route(app, id, params) {
         return Some(r);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(result) = crate::symbol_library::route(app, id, params) {
+        return Some(result);
     }
     if let Some(r) = crate::bedit::route(app, id, params) {
         return Some(r);

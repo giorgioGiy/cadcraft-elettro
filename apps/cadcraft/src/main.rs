@@ -178,6 +178,9 @@ fn services() -> Services {
             let dialog = if dir.is_empty() { dialog } else { dialog.set_directory(dir) };
             dialog.pick_file().map(|p| p.to_string_lossy().to_string())
         })),
+        pick_symbol_library: Some(Box::new(|| {
+            rfd::FileDialog::new().add_filter(i18n::t("Symbol libraries (ZIP)"), &["zip"]).pick_file().map(|path| path.to_string_lossy().to_string())
+        })),
         no_file_system: false,
     }
 }

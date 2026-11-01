@@ -1,6 +1,6 @@
 # UI parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-27 · **Change:** minor (WIPEOUT closure-aware grips) · **Target:** Autodesk AutoCAD 2027 for Mac (26.0)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-11-01 · **Change:** minor (desktop ZIP symbol-library browser) · **Target:** Autodesk AutoCAD 2027 for Mac (26.0)
 
 How CADCraft's interaction compares with AutoCAD's: point entry, object snaps, tracking, dynamic
 input, grips, selection, the command line, chrome and navigation. A drafter's speed in AutoCAD
@@ -161,7 +161,7 @@ down-arrow options menu (DYNPROMPT), and DYNDIM.
 | Tool Sets palette (Drafting, Modeling, … with flyouts) | yes | yes for 2D groups |
 | Properties Inspector, Quick Properties | yes | yes (every control acts or is visibly unavailable, #182); block references show read-only Position X/Y/Z from their stored insertion point; coordinate editing is still missing |
 | Layer Properties Manager (filters, states, VP overrides) | yes | yes |
-| Blocks palette, Content | yes | Blocks window (click to insert, #28) |
+| Blocks palette, Content | yes | Blocks window (click to insert, #28); desktop Symbol Library window indexes local ZIP catalogs, generates DXF/DWG previews on demand, searches by symbol code and starts INSERT with a scale preset ([symbol-libraries.md](symbol-libraries.md)) |
 | Status bar toggles | ~25 | most toggles; Annotation Visibility and Workspace do nothing |
 | ViewCube | interactive 3D | clickable for 2D (Top/Home → extents); dragging does nothing (#7) |
 | Navigation bar, SteeringWheels | yes | no |
@@ -204,6 +204,7 @@ down-arrow options menu (DYNPROMPT), and DYNDIM.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-11-01 | minor | Added the desktop Symbol Library window for local ZIP catalogs with generated previews, search and INSERT scale preset |
 | 2026-10-27 | minor | WIPEOUT grips treat implicit and explicit closure alike; moving the first vertex carries the closing marker, and moving endpoints together keeps both corners editable. Open/closed polyline flags and coincident polyline vertices remain independent (#2256) |
 | 2026-10-26 | minor | Browser host stores bounded, validated panel layout separately from drawing state; malformed or unsupported records retain defaults. Native workspace storage is unchanged. |
 | 2026-10-22 | minor | Polyline segment midpoint grips use rectangles, distinct from square vertex grips, with matching hover and pick bounds (#1950) |

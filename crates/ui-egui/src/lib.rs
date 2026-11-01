@@ -39,6 +39,8 @@ mod page_manager;
 mod panel_state;
 pub mod spacemouse;
 pub mod switch;
+#[cfg(not(target_arch = "wasm32"))]
+mod symbol_library;
 // The External References palette.
 pub mod xrefs;
 
@@ -221,6 +223,8 @@ pub struct Services {
     /// `None` where there is no native file dialog: the desktop without one asks for the name,
     /// and the web (no file system) says to drop the file (`no_file_system`).
     pub pick_lisp: Option<Box<dyn Fn(&str) -> Option<String>>>,
+    /// Pick a local ZIP containing DXF/DWG symbol files.
+    pub pick_symbol_library: Option<Box<dyn Fn() -> Option<String>>>,
     /// The host has no file system to read a path from (the browser): a dropped file's contents
     /// are what it loads, and APPLOAD says so instead of asking for a name it cannot read.
     pub no_file_system: bool,
@@ -311,6 +315,9 @@ pub struct CadApp {
     pub hatch_dlg: Option<hatchdlg::HatchDlgState>,
     /// The Edit Block Definition dialog ([`bedit`]).
     pub bedit: bedit::State,
+    /// Local ZIP symbol catalog and its generated previews (desktop only).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) symbol_library: symbol_library::State,
     /// The startup update check and its prompt (desktop; [`updates_ui`]).
     #[cfg(not(target_arch = "wasm32"))]
     pub updates_rt: updates_ui::Runtime,
@@ -366,6 +373,8 @@ impl CadApp {
             alias_dlg: None,
             hatch_dlg: None,
             bedit: bedit::State::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            symbol_library: symbol_library::State::default(),
             #[cfg(not(target_arch = "wasm32"))]
             updates_rt: updates_ui::Runtime::default(),
         }
@@ -477,6 +486,10 @@ impl CadApp {
         if let Some(dir) = &self.ui.last_lisp_dir {
             prefs["lispDir"] = json!(dir);
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(path) = self.symbol_library.source_path() {
+            prefs["symbolLibrary"] = json!(path.to_string_lossy());
+        }
         prefs.to_string()
     }
 
@@ -506,6 +519,10 @@ impl CadApp {
         }
         if let Some(dir) = v.get("lispDir").and_then(Value::as_str).filter(|d| !d.is_empty()) {
             self.ui.last_lisp_dir = Some(dir.to_string());
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(path) = v.get("symbolLibrary").and_then(Value::as_str).filter(|path| !path.is_empty()) {
+            self.symbol_library.load(path);
         }
     }
 
