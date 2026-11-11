@@ -41,7 +41,10 @@ fn xref_opens_the_palette_and_its_buttons_manage_the_xref() {
     assert!(app.cmdline("XR").is_none());
     assert!(app.ui.docking.layout.contains(&Panel::ExternalRefs));
     app.ui.in_window_menu = false;
-    let mut h = Harness::builder().with_size(vec2(1400.0, 900.0)).build_ui_state(
+    // External References opens below the two persistent right-dock groups.  Give the
+    // integration harness enough vertical space for its details buttons to be visible and
+    // clickable instead of asking egui_kittest to click a clipped accessibility node.
+    let mut h = Harness::builder().with_size(vec2(1400.0, 1200.0)).build_ui_state(
         |ui, app: &mut CadApp| {
             app.logic(&ui.ctx().clone());
             app.ui(ui);
