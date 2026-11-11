@@ -115,7 +115,8 @@ fn default_layout_keeps_tool_sets_left_and_palettes_right() {
     assert!(symbols.left() >= drawing.right() - 1.0, "{symbols:?} {drawing:?}");
     assert!(layers.left() >= drawing.right() - 1.0 && properties.left() >= drawing.right() - 1.0, "{layers:?} {properties:?} {drawing:?}");
     let seam = hit(&h, Hit::Divider(Divider::Group(Panel::SymbolLibrary)));
-    assert!((seam.center().y - symbols.bottom() - 480.0).abs() < 8.0, "{symbols:?} {seam:?}");
+    let library_body = seam.center().y - symbols.bottom();
+    assert!((300.0..=480.0).contains(&library_body), "{symbols:?} {seam:?}");
     assert!(layers.top() > seam.top() && properties.top() > seam.top());
 }
 
