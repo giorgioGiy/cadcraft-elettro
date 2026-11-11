@@ -217,7 +217,8 @@ fn time_sensitive_right_click() {
     let ctx = egui::Context::default();
     app.logic(&ctx);
     painted(&mut app, &ctx, Vec::new(), 0.0);
-    let at = egui::pos2(800.0, 500.0);
+    let canvas = app.canvas.rect.unwrap();
+    let at = canvas.center();
     let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE };
     painted(&mut app, &ctx, vec![egui::Event::PointerMoved(at)], 0.1);
 
@@ -232,7 +233,7 @@ fn time_sensitive_right_click() {
     }
     assert!(app.session.prompt_text().contains("next point"), "no Enter: {}", app.session.prompt_text());
     // A quick click elsewhere closes the menu and is Enter.
-    let away = egui::pos2(400.0, 300.0);
+    let away = egui::pos2(canvas.right() - 20.0, canvas.bottom() - 20.0);
     let quick = |pressed| egui::Event::PointerButton { pos: away, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE };
     painted(&mut app, &ctx, vec![egui::Event::PointerMoved(away)], 2.0);
     painted(&mut app, &ctx, vec![quick(true)], 3.0);
