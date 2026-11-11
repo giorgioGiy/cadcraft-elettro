@@ -2226,7 +2226,7 @@ mod tests {
         }
         let render_directory = std::env::var_os("CADCRAFT_SYMBOL_LIBRARY_SHOTS").map(PathBuf::from);
         if let Some(directory) = &render_directory {
-            assert!(std::fs::create_dir_all(&directory).is_ok());
+            assert!(std::fs::create_dir_all(directory).is_ok());
             let image = harness.render();
             assert!(image.is_ok(), "{image:?}");
             if let Ok(image) = image {

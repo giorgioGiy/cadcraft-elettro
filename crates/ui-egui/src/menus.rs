@@ -450,17 +450,13 @@ fn run_symbol_legend_dialog_command(app: &mut CadApp, id: &str, params: &Value) 
     Some(Ok(Value::Null))
 }
 
-fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Result<Value, String>> {
+fn run_ui_command_prelude(app: &mut CadApp, id: &str, params: &Value) -> Option<Result<Value, String>> {
     if let Some(result) = run_page_manager_command(app, id) {
         return Some(result);
     }
     if let Some(result) = route_ui_subsystems(app, id, params) {
         return Some(result);
     }
-    // When a file command should ask for a file. The `ui.*` commands are the pickers; the engine's
-    // OPEN/SAVEAS/QSAVE ask only when typed or chosen from a menu (no parameters), so JSON calls
-    // never open a picker.
-    let no_path = should_pick_file_path(id, params);
     if let Some(result) = run_recent_file_command(app, id) {
         return Some(result);
     }
@@ -482,6 +478,17 @@ fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Re
         app.ui.dialog = Some("find".to_string());
         return Some(Ok(Value::Null));
     }
+    None
+}
+
+fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Result<Value, String>> {
+    if let Some(result) = run_ui_command_prelude(app, id, params) {
+        return Some(result);
+    }
+    // When a file command should ask for a file. The `ui.*` commands are the pickers; the engine's
+    // OPEN/SAVEAS/QSAVE ask only when typed or chosen from a menu (no parameters), so JSON calls
+    // never open a picker.
+    let no_path = should_pick_file_path(id, params);
     let r = match id {
         "ui.open" | "open" if no_path => {
             let picked = app.services.pick_open.as_ref().and_then(|f| f());
