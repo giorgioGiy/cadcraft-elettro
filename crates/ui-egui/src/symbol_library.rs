@@ -749,7 +749,8 @@ fn draw_preview(ui: &mut egui::Ui, preview: &Preview) -> egui::Response {
             let bounds = list.bounds;
             let inner = rect.shrink(6.0);
             let scale = (f64::from(inner.width()) / bounds.width().max(1e-9)).min(f64::from(inner.height()) / bounds.height().max(1e-9));
-            let transform = Xf { rect, center: Vec2::new((bounds.min.x + bounds.max.x) / 2.0, (bounds.min.y + bounds.max.y) / 2.0), scale };
+            let transform =
+                Xf { rect, center: Vec2::new((bounds.min.x + bounds.max.x) / 2.0, (bounds.min.y + bounds.max.y) / 2.0), scale, twist: 0.0 };
             crate::canvas::draw_list(&painter, &transform, list, Rgb(tokens.canvas.r(), tokens.canvas.g(), tokens.canvas.b()), false);
         }
         Preview::Ready(_) => {

@@ -690,7 +690,7 @@ mod attributed_block_tests {
         let point = Vec2::new(0.0, 0.0);
         assert_eq!(attributed_block_at(&app, point, 20.0), Some(handle));
 
-        let xf = Xf { rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)), center: point, scale: 20.0 };
+        let xf = Xf { rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)), center: point, scale: 20.0, twist: 0.0 };
         let viewport = None;
         let clip = None;
         let result = handle_double_click(
