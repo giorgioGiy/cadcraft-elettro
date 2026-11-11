@@ -81,48 +81,42 @@ pub type Workspace = craft_ui::docking::Workspace<Panel>;
 
 /// The panel layout's shape version, saved beside it. Layouts saved without it, or with an
 /// older one, are the split frames from before the dock columns and give way to the default.
-pub const LAYOUT_VERSION: u32 = 4;
+pub const LAYOUT_VERSION: u32 = 5;
 
 /// Width of the left dock's Tool Sets column.
 pub const TOOL_SETS_WIDTH: f32 = 220.0;
-/// Width of the left dock's palettes column.
-pub const PALETTES_WIDTH: f32 = 300.0;
-/// The symbol browser is half the width of its former 760 px floating window.
+/// Width of the right dock shared by the electrical library and document palettes.
 pub const SYMBOL_LIBRARY_WIDTH: f32 = 380.0;
-/// Layers' body height above Properties in a dock column.
-const LAYERS_HEIGHT: f32 = 280.0;
+/// Symbol-library body height above the tabbed Layers and Properties group.
+const SYMBOL_LIBRARY_HEIGHT: f32 = 480.0;
 
-/// Tool Sets and document palettes on the left, the drawing, and the symbol library on the right.
+/// Tool Sets on the left; the symbol library above tabbed Layers and Properties on the right.
 pub fn default_workspace() -> Workspace {
     Workspace::new(Layout {
         root: Some(split(
             SplitAxis::Horizontal,
-            SplitSize::FixedFirst(TOOL_SETS_WIDTH + PALETTES_WIDTH),
-            Node::Dock {
-                side: Side::Start,
-                columns: vec![
-                    Column::new(vec![Group::new(vec![Panel::ToolSets], 0)], TOOL_SETS_WIDTH),
-                    Column::new(vec![Group::new(vec![Panel::Layers], 0), Group::new(vec![Panel::Properties], 0)], PALETTES_WIDTH),
-                ],
-            },
+            SplitSize::FixedFirst(TOOL_SETS_WIDTH),
+            Node::Dock { side: Side::Start, columns: vec![Column::new(vec![Group::new(vec![Panel::ToolSets], 0)], TOOL_SETS_WIDTH)] },
             split(
                 SplitAxis::Horizontal,
                 SplitSize::FixedSecond(SYMBOL_LIBRARY_WIDTH),
                 tabs(Panel::Canvas),
-                Node::Dock { side: Side::End, columns: vec![Column::new(vec![Group::new(vec![Panel::SymbolLibrary], 0)], SYMBOL_LIBRARY_WIDTH)] },
+                Node::Dock {
+                    side: Side::End,
+                    columns: vec![Column::new(
+                        vec![Group::new(vec![Panel::SymbolLibrary], 0), Group::new(vec![Panel::Layers, Panel::Properties], 0)],
+                        SYMBOL_LIBRARY_WIDTH,
+                    )],
+                },
             ),
         )),
         floating: Vec::new(),
     })
 }
 
-/// The dock a panel belongs in: Tool Sets and palettes both live on the left.
+/// The dock a panel belongs in: Tool Sets left, every document palette right.
 fn home_side(panel: Panel) -> (Side, f32) {
-    match panel {
-        Panel::ToolSets => (Side::Start, TOOL_SETS_WIDTH),
-        Panel::SymbolLibrary => (Side::End, SYMBOL_LIBRARY_WIDTH),
-        _ => (Side::Start, PALETTES_WIDTH),
-    }
+    if panel == Panel::ToolSets { (Side::Start, TOOL_SETS_WIDTH) } else { (Side::End, SYMBOL_LIBRARY_WIDTH) }
 }
 
 /// The panels of every dock group on `side`: columns from the window edge inwards, groups from
@@ -151,11 +145,12 @@ fn docked(layout: &Layout<Panel>, panel: Panel) -> bool {
 }
 
 /// The docked neighbour a panel with no recorded place opens beside, as a new group above
-/// (`false`) or below (`true`) it: Layers above Properties, External References and QuickCalc
-/// below them, Tool Sets at the top of the left dock.
+/// (`false`) or below (`true`) it: the symbol library above the document palettes, External
+/// References and QuickCalc below them, Tool Sets alone in the left dock.
 fn home_anchor(layout: &Layout<Panel>, panel: Panel) -> Option<(Panel, bool)> {
     let neighbours: &[(Panel, bool)] = match panel {
-        Panel::Canvas | Panel::ToolSets | Panel::SymbolLibrary => &[],
+        Panel::Canvas | Panel::ToolSets => &[],
+        Panel::SymbolLibrary => &[(Panel::Layers, false), (Panel::Properties, false)],
         Panel::Layers => &[(Panel::Properties, false), (Panel::ExternalRefs, false)],
         Panel::Properties => &[(Panel::Layers, true), (Panel::ExternalRefs, false)],
         Panel::ExternalRefs => &[(Panel::Properties, true), (Panel::Layers, true)],
@@ -443,8 +438,8 @@ impl DockContent<Panel> for Panels<'_> {
         panel_limits(panel)
     }
     fn dock_heights(&self, panel: &Panel) -> Option<DockHeights> {
-        // Layers keeps its list's height above Properties, which takes the rest of the column.
-        (*panel == Panel::Layers).then(|| DockHeights::new(LAYERS_HEIGHT))
+        // The library keeps useful browsing space above the tabbed document palettes.
+        (*panel == Panel::SymbolLibrary).then(|| DockHeights::new(SYMBOL_LIBRARY_HEIGHT))
     }
     fn paint_icon(&mut self, painter: &egui::Painter, rect: egui::Rect, panel: &Panel, _color: egui::Color32) -> bool {
         let Some(icon) = panel.icon() else { return false };
