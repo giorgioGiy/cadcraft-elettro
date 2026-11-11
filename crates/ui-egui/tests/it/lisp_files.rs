@@ -43,7 +43,7 @@ fn a_canvas_click_answers_a_routine_waiting_for_a_point() {
     use egui::{Event, Modifiers, PointerButton, vec2};
     let mut app = CadApp::new(Session::new(), Services::default());
     app.canvas.zoom_pending = false;
-    let mut h = egui_kittest::Harness::builder().with_size(vec2(1600.0, 1000.0)).build_ui_state(
+    let mut h = egui_kittest::Harness::builder().with_size(vec2(1800.0, 1000.0)).build_ui_state(
         |ui, app: &mut CadApp| {
             app.logic(ui.ctx());
             app.ui(ui);
@@ -55,6 +55,7 @@ fn a_canvas_click_answers_a_routine_waiting_for_a_point() {
     h.run_steps(2);
     let target = Vec2::new(1.0, 2.0);
     let pos = h.state().canvas.xf.unwrap().to_screen(target);
+    assert!(h.state().canvas.rect.is_some_and(|canvas| canvas.contains(pos)), "the picked point maps to the canvas");
     h.event(Event::PointerMoved(pos));
     h.run_steps(2);
     for pressed in [true, false] {
