@@ -148,7 +148,7 @@ fn palette_icons_are_painted_in_code_and_shown_in_an_iconic_column() {
     let drawing = h.state().canvas.rect.unwrap();
     let layers = hit(&h, Hit::Icon(Panel::Layers));
     let properties = hit(&h, Hit::Icon(Panel::Properties));
-    assert!(layers.right() <= drawing.left() + 1.0 && layers.top() < properties.top(), "{layers:?} {properties:?}");
+    assert!(layers.left() >= drawing.right() - 1.0 && layers.top() < properties.top(), "{layers:?} {properties:?}");
 }
 
 #[test]
@@ -593,7 +593,7 @@ fn group_drag_bar_moves_the_whole_group_into_the_palette_column() {
     // Into the middle of the Properties group, as tabs.
     let properties = hit(&h, Hit::Tab(Panel::Properties));
     let column = hit(&h, Hit::ColumnBar(Panel::SymbolLibrary));
-    let to = egui::pos2(column.center().x, properties.bottom() + 120.0);
+    let to = egui::pos2(column.center().x, properties.bottom() + 40.0);
     let document = h.state().session.doc().unwrap().clone();
     drag(&mut h, bar.center(), to);
     let layout = &h.state().ui.docking.layout;
