@@ -60,12 +60,12 @@ fn the_menu_bar_brings_the_os_cursor_back() {
 #[test]
 fn an_open_menu_keeps_the_os_cursor_visible_over_the_drawing() {
     let mut harness = harness();
-    let title = harness.get_by_role_and_label(Role::Button, "View");
+    let title = harness.get_by_role_and_label(Role::Button, "Window");
     title.click();
     harness.run_steps(3);
 
     // A menu item of the open popup lies over the drawing area.
-    harness.get_by_label("Regen All").hover();
+    harness.get_by_label("Reset Panel Layout").hover();
     harness.run_steps(3);
     assert_ne!(cursor(&harness), egui::CursorIcon::None, "a menu item over the canvas shows the pointer");
 
