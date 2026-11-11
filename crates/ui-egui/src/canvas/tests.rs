@@ -193,7 +193,9 @@ pub(crate) fn painted_text(app: &mut CadApp, ctx: &egui::Context, pointer: Pos2)
         }
     }
     let raw = egui::RawInput {
-        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))),
+        // Leave enough room for the electrical workspace's left palettes and right symbol
+        // library so this canvas-focused test still receives a real drawing viewport.
+        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1800.0, 900.0))),
         events: vec![egui::Event::PointerMoved(pointer)],
         ..Default::default()
     };
