@@ -69,6 +69,7 @@ impl State {
 
 fn begin(app: &mut CadApp, state: &State) -> Result<(), String> {
     app.session.cancel();
+    #[cfg(not(target_arch = "wasm32"))]
     crate::symbol_library::sync_descriptions(app);
     app.session.start("symbollegend").map_err(|error| error.to_string())?;
     app.session.input(Input::Text(state.scale.to_string())).map_err(|error| error.to_string())?;
