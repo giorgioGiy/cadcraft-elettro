@@ -48,6 +48,11 @@ fn attribute_label(tag: &str) -> Option<&'static str> {
 // Repeated tags in combined electrical frames belong to separate apparatus columns.
 // Keep the original attribute indices: equal tags must never merge their values.
 fn groups(ins: &Insert) -> Vec<Group> {
+    // Cart_pl repeats PROGETTO1 for two different title-block fields. It is one form, not a bank
+    // of electrical drops (calate), so preserve its definition order.
+    if ins.block.eq_ignore_ascii_case("Cart_pl") || ins.block.eq_ignore_ascii_case("CADCRAFT_ISO7200") {
+        return vec![Group { label: "Dati del cartiglio".into(), indices: (0..ins.attribs.len()).collect() }];
+    }
     let mut counts = BTreeMap::<String, usize>::new();
     for a in &ins.attribs {
         *counts.entry(a.tag.to_ascii_uppercase()).or_default() += 1;
@@ -94,6 +99,53 @@ fn groups(ins: &Insert) -> Vec<Group> {
     }
     out.retain(|g| !g.indices.is_empty());
     out
+}
+
+fn displayed_label(ins: &Insert, index: usize) -> String {
+    let Some(attribute) = ins.attribs.get(index) else { return String::new() };
+    if ins.block.eq_ignore_ascii_case("CADCRAFT_ISO7200") {
+        let label = match attribute.tag.to_ascii_uppercase().as_str() {
+            "TITOLO" => "Titolo del documento",
+            "PROPRIETARIO" => "Proprietario del documento",
+            "ID_DOCUMENTO" => "Identificativo documento",
+            "TIPO_DOCUMENTO" => "Tipo documento",
+            "REVISIONE" => "Indice di revisione",
+            "CREATO_DA" => "Creato da",
+            "APPROVATO" => "Approvato da",
+            "DATA_EMISSIONE" => "Data di emissione",
+            "SCALA" => "Scala",
+            "FOGLIO" => "Numero foglio",
+            "FOGLI_TOTALI" => "Totale fogli",
+            "PROGETTO" => "Progetto / impianto",
+            "COMMITTENTE" => "Committente",
+            "FORMATO" => "Formato carta",
+            _ => attribute.tag.as_str(),
+        };
+        return label.into();
+    }
+    if ins.block.eq_ignore_ascii_case("Cart_pl") {
+        let tag = attribute.tag.to_ascii_uppercase();
+        if tag == "PROGETTO1" {
+            let occurrence = ins.attribs.iter().take(index + 1).filter(|candidate| candidate.tag.eq_ignore_ascii_case("PROGETTO1")).count();
+            return if occurrence <= 1 { "Oggetto".into() } else { "Esecutivo".into() };
+        }
+        let label = match tag.as_str() {
+            "COMMITTENTE" => "Committente",
+            "COMMITTENTE1" => "Indirizzo committente",
+            "PROGETTO" => "Indirizzo oggetto",
+            "DENOMINAZIONE1" => "Descrizione 1",
+            "DENOMINAZIONE2" => "Descrizione 2",
+            "SCALA" => "Scala",
+            "FILE-MATR." => "File / matricola",
+            "DATA" => "Data progetto",
+            "TAVOLA" => "Tavola",
+            "DATA1" => "Data variante",
+            "TECNICO" => "Tecnico",
+            _ => attribute.tag.as_str(),
+        };
+        return label.into();
+    }
+    attribute_label(&attribute.tag).unwrap_or(&attribute.tag).into()
 }
 
 /// The repeated electrical column closest to the block-selection click.  Its attributes are
@@ -211,12 +263,8 @@ fn show_form(app: &mut CadApp, ctx: &egui::Context) {
         let is_calata = groups.len() > 1 && st.group > 0;
         let font = egui::TextStyle::Body.resolve(ui.style());
         let measure = |text: &str| ui.painter().layout_no_wrap(text.chars().take(160).collect(), font.clone(), Tokens::get().text).size().x;
-        let tag_width = indices
-            .iter()
-            .filter_map(|index| st.original.attribs.get(*index))
-            .map(|a| measure(attribute_label(&a.tag).unwrap_or(&a.tag)))
-            .fold(measure("Tipo di attributo"), f32::max)
-            .min(170.0);
+        let tag_width =
+            indices.iter().map(|index| measure(&displayed_label(&st.original, *index))).fold(measure("Tipo di attributo"), f32::max).min(170.0);
         let value_width =
             st.original.attribs.iter().map(|a| measure(a.text.value.lines().next().unwrap_or(""))).fold(200.0, f32::max).min(320.0) + 12.0;
         let width = (tag_width + value_width + 30.0).min((ctx.content_rect().width() - 40.0).max(220.0));
@@ -269,8 +317,8 @@ fn show_form(app: &mut CadApp, ctx: &egui::Context) {
                         continue;
                     }
                     ui.allocate_ui_with_layout(egui::vec2(tag_width, 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        let label = attribute_label(&attribute.tag).unwrap_or(&attribute.tag);
-                        ui.add(egui::Label::new(label).wrap()).on_hover_text(format!("Codice DXF: {}", attribute.tag));
+                        let label = displayed_label(&st.original, index);
+                        ui.add(egui::Label::new(&label).wrap()).on_hover_text(format!("Codice DXF: {}", attribute.tag));
                     });
                     let response = ui.add_enabled(
                         !attribute.constant,
@@ -280,7 +328,7 @@ fn show_form(app: &mut CadApp, ctx: &egui::Context) {
                             .desired_width(value_width)
                             .char_limit(65_536),
                     );
-                    crate::control::record_widget(ui, &response, attribute_label(&attribute.tag).unwrap_or(&attribute.tag), "textedit", None);
+                    crate::control::record_widget(ui, &response, &displayed_label(&st.original, index), "textedit", None);
                     response.on_hover_text(if attribute.constant {
                         "Attributo costante: non modificabile"
                     } else {
@@ -382,6 +430,25 @@ mod tests {
         assert_eq!(after.values[0], "Q1");
         app.session.undo().unwrap();
         assert_eq!(state(&app, handle).unwrap().original, before);
+    }
+
+    #[test]
+    fn cart_pl_duplicate_tags_stay_in_one_form_with_distinct_labels() {
+        let (app, handle) = fixture();
+        let mut insert = state(&app, handle).unwrap().original;
+        insert.block = "Cart_pl".into();
+        let template = insert.attribs.first().unwrap().clone();
+        insert.attribs = ["COMMITTENTE", "PROGETTO1", "PROGETTO1", "SCALA"]
+            .into_iter()
+            .map(|tag| cadcraft_doc::Attrib { tag: tag.into(), ..template.clone() })
+            .collect();
+        let sections = groups(&insert);
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].indices, vec![0, 1, 2, 3]);
+        assert_eq!(displayed_label(&insert, 0), "Committente");
+        assert_eq!(displayed_label(&insert, 1), "Oggetto");
+        assert_eq!(displayed_label(&insert, 2), "Esecutivo");
+        assert_eq!(displayed_label(&insert, 3), "Scala");
     }
 
     #[test]

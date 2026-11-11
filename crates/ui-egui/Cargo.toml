@@ -32,6 +32,7 @@ web-time = { workspace = true }
 craft-update = { workspace = true }
 cadcraft-io = { workspace = true }
 zip = { workspace = true }
+quick-xml = { workspace = true }
 
 [dev-dependencies]
 # Tests build the dock area as the desktop app does (headless contexts keep floats in-window).

@@ -237,6 +237,20 @@ pub(crate) fn insert_with(
     insert_scaled(s, name, at, Vec3::new(scale.x, scale.y, scale.x), rotation, base, values)
 }
 
+/// [`insert_with`] with attribute values in ATTDEF order. This is required for imported
+/// electrical title blocks that legitimately contain the same tag more than once.
+pub(crate) fn insert_with_ordered(
+    s: &mut Session,
+    name: &str,
+    at: Vec2,
+    scale: Vec2,
+    rotation: f64,
+    base: Option<Vec2>,
+    ordered: &[String],
+) -> Result<Handle> {
+    insert_scaled_values(s, name, at, Vec3::new(scale.x, scale.y, scale.x), rotation, base, AttributeValues::Ordered(ordered))
+}
+
 /// [`insert_with`] with a Z scale factor of its own.
 fn insert_scaled(
     s: &mut Session,
@@ -247,9 +261,31 @@ fn insert_scaled(
     base: Option<Vec2>,
     values: &serde_json::Map<String, Value>,
 ) -> Result<Handle> {
+    insert_scaled_values(s, name, at, scale, rotation, base, AttributeValues::Map(values))
+}
+
+#[derive(Clone, Copy)]
+enum AttributeValues<'a> {
+    Map(&'a serde_json::Map<String, Value>),
+    Ordered(&'a [String]),
+}
+
+/// [`insert_scaled`] with values from a JSON map or in ATTDEF order. Interactive INSERT needs the ordered
+/// form because real electrical libraries can contain repeated tags; a JSON object cannot
+/// represent two different values for the same key.
+fn insert_scaled_values(
+    s: &mut Session,
+    name: &str,
+    at: Vec2,
+    scale: Vec3,
+    rotation: f64,
+    base: Option<Vec2>,
+    values: AttributeValues<'_>,
+) -> Result<Handle> {
     let blk = s.doc()?.block(name).cloned().ok_or_else(|| EngineError::Other(format!("Block \"{name}\" not found.")))?;
     let mut ins = insert_entity(&blk, at, scale, rotation, base);
     let m = ins.transform(blk.base.xy());
+    let mut attribute_index = 0_usize;
     for e in blk.entities.iter() {
         if let EntityKind::AttDef(ad) = &e.kind {
             if ad.constant {
@@ -261,7 +297,12 @@ fn insert_scaled(
             if let EntityKind::Text(tt) = k {
                 t = tt;
             }
-            t.value = attedit::value_for(values, &ad.tag).unwrap_or_else(|| ad.text.value.clone());
+            t.value = match values {
+                AttributeValues::Map(values) => attedit::value_for(values, &ad.tag),
+                AttributeValues::Ordered(ordered) => ordered.get(attribute_index).cloned(),
+            }
+            .unwrap_or_else(|| ad.text.value.clone());
+            attribute_index = attribute_index.saturating_add(1);
             ins.attribs.push(Attrib {
                 tag: ad.tag.clone(),
                 text: t,
@@ -569,7 +610,7 @@ impl BlockM {
     }
 }
 
-mod insert_file;
+pub(crate) mod insert_file;
 pub(crate) mod xref;
 
 /// Where the command-line INSERT is in its prompt sequence.
@@ -616,7 +657,8 @@ struct InsertM {
     dropped: Option<Vec2>,
     rotation: Option<f64>,
     attdefs: Vec<(String, String, String)>,
-    values: serde_json::Map<String, Value>,
+    /// Values in ATTDEF order. Tags are not keys: Eplus-compatible blocks may repeat them.
+    values: Vec<String>,
     /// `*name`: insert the block's objects (one uniform scale factor, no attribute values).
     explode: bool,
     /// The file waiting for the Redefine answer.
@@ -637,7 +679,7 @@ impl InsertM {
             && self.values.len() >= self.attdefs.len()
             && let (Some(n), Some(a), Some(sc), Some(r)) = (self.name.clone(), self.at, self.scale, self.rotation)
         {
-            let h = insert_scaled(s, &n, a, self.scale3(sc), r, self.base, &self.values)?;
+            let h = insert_scaled_values(s, &n, a, self.scale3(sc), r, self.base, AttributeValues::Ordered(&self.values))?;
             if self.explode {
                 insert_file::explode_insert(s, h)?;
             }
@@ -905,12 +947,12 @@ impl Interactive for InsertM {
                 return self.advance(s);
             }
             InsStage::Attribs => {
-                let (tag, _, default) = self.attdefs.get(self.values.len()).cloned().unwrap_or_default();
+                let (_, _, default) = self.attdefs.get(self.values.len()).cloned().unwrap_or_default();
                 let v = match i {
                     Input::Text(t) => t,
                     _ => default,
                 };
-                self.values.insert(tag, Value::String(v));
+                self.values.push(v);
                 return self.advance(s);
             }
         }

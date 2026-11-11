@@ -17,12 +17,13 @@ pub enum Panel {
     QuickCalc,
     Layers,
     Properties,
+    SymbolLibrary,
     #[serde(rename = "externalReferences")]
     ExternalRefs,
 }
 
 impl Panel {
-    pub const ALL: &[Self] = &[Self::Canvas, Self::ToolSets, Self::Layers, Self::Properties, Self::ExternalRefs];
+    pub const ALL: &[Self] = &[Self::Canvas, Self::ToolSets, Self::Layers, Self::Properties, Self::SymbolLibrary, Self::ExternalRefs];
     pub fn id(self) -> &'static str {
         match self {
             Self::Canvas => "canvas",
@@ -30,6 +31,7 @@ impl Panel {
             Self::QuickCalc => "quickCalc",
             Self::Layers => "layers",
             Self::Properties => "properties",
+            Self::SymbolLibrary => "symbolLibrary",
             Self::ExternalRefs => "externalReferences",
         }
     }
@@ -40,6 +42,7 @@ impl Panel {
             Self::QuickCalc => "QuickCalc",
             Self::Layers => "Layers",
             Self::Properties => "Properties",
+            Self::SymbolLibrary => "Symbol Library",
             Self::ExternalRefs => "External References",
         }
     }
@@ -52,6 +55,7 @@ impl Panel {
             Self::QuickCalc => Some(Icon::Table),
             Self::Layers => Some(Icon::Layers),
             Self::Properties => Some(Icon::Properties),
+            Self::SymbolLibrary => Some(Icon::Blocks),
             Self::ExternalRefs => Some(Icon::Attach),
         }
     }
@@ -77,41 +81,48 @@ pub type Workspace = craft_ui::docking::Workspace<Panel>;
 
 /// The panel layout's shape version, saved beside it. Layouts saved without it, or with an
 /// older one, are the split frames from before the dock columns and give way to the default.
-pub const LAYOUT_VERSION: u32 = 2;
+pub const LAYOUT_VERSION: u32 = 4;
 
 /// Width of the left dock's Tool Sets column.
 pub const TOOL_SETS_WIDTH: f32 = 220.0;
-/// Width of the right dock's palettes column.
+/// Width of the left dock's palettes column.
 pub const PALETTES_WIDTH: f32 = 300.0;
+/// The symbol browser is half the width of its former 760 px floating window.
+pub const SYMBOL_LIBRARY_WIDTH: f32 = 380.0;
 /// Layers' body height above Properties in a dock column.
 const LAYERS_HEIGHT: f32 = 280.0;
 
-fn dock(side: Side, width: f32, groups: &[Panel]) -> Node<Panel> {
-    let groups = groups.iter().map(|panel| Group::new(vec![*panel], 0)).collect();
-    Node::Dock { side, columns: vec![Column::new(groups, width)] }
-}
-
-/// Tool Sets in the left dock, the drawing, and Layers above Properties in the right dock.
+/// Tool Sets and document palettes on the left, the drawing, and the symbol library on the right.
 pub fn default_workspace() -> Workspace {
     Workspace::new(Layout {
         root: Some(split(
             SplitAxis::Horizontal,
-            SplitSize::FixedFirst(TOOL_SETS_WIDTH),
-            dock(Side::Start, TOOL_SETS_WIDTH, &[Panel::ToolSets]),
+            SplitSize::FixedFirst(TOOL_SETS_WIDTH + PALETTES_WIDTH),
+            Node::Dock {
+                side: Side::Start,
+                columns: vec![
+                    Column::new(vec![Group::new(vec![Panel::ToolSets], 0)], TOOL_SETS_WIDTH),
+                    Column::new(vec![Group::new(vec![Panel::Layers], 0), Group::new(vec![Panel::Properties], 0)], PALETTES_WIDTH),
+                ],
+            },
             split(
                 SplitAxis::Horizontal,
-                SplitSize::FixedSecond(PALETTES_WIDTH),
+                SplitSize::FixedSecond(SYMBOL_LIBRARY_WIDTH),
                 tabs(Panel::Canvas),
-                dock(Side::End, PALETTES_WIDTH, &[Panel::Layers, Panel::Properties]),
+                Node::Dock { side: Side::End, columns: vec![Column::new(vec![Group::new(vec![Panel::SymbolLibrary], 0)], SYMBOL_LIBRARY_WIDTH)] },
             ),
         )),
         floating: Vec::new(),
     })
 }
 
-/// The dock a panel belongs in: Tool Sets on the left, the palettes on the right.
+/// The dock a panel belongs in: Tool Sets and palettes both live on the left.
 fn home_side(panel: Panel) -> (Side, f32) {
-    if panel == Panel::ToolSets { (Side::Start, TOOL_SETS_WIDTH) } else { (Side::End, PALETTES_WIDTH) }
+    match panel {
+        Panel::ToolSets => (Side::Start, TOOL_SETS_WIDTH),
+        Panel::SymbolLibrary => (Side::End, SYMBOL_LIBRARY_WIDTH),
+        _ => (Side::Start, PALETTES_WIDTH),
+    }
 }
 
 /// The panels of every dock group on `side`: columns from the window edge inwards, groups from
@@ -144,7 +155,7 @@ fn docked(layout: &Layout<Panel>, panel: Panel) -> bool {
 /// below them, Tool Sets at the top of the left dock.
 fn home_anchor(layout: &Layout<Panel>, panel: Panel) -> Option<(Panel, bool)> {
     let neighbours: &[(Panel, bool)] = match panel {
-        Panel::Canvas | Panel::ToolSets => &[],
+        Panel::Canvas | Panel::ToolSets | Panel::SymbolLibrary => &[],
         Panel::Layers => &[(Panel::Properties, false), (Panel::ExternalRefs, false)],
         Panel::Properties => &[(Panel::Layers, true), (Panel::ExternalRefs, false)],
         Panel::ExternalRefs => &[(Panel::Properties, true), (Panel::Layers, true)],
@@ -155,12 +166,12 @@ fn home_anchor(layout: &Layout<Panel>, panel: Panel) -> Option<(Panel, bool)> {
     }
     let (side, _) = home_side(panel);
     let columns = dock_groups(layout, side);
-    let column = columns.first()?;
     if panel == Panel::ToolSets {
-        column.first().and_then(|group| group.first()).map(|anchor| (*anchor, false))
-    } else {
-        column.last().and_then(|group| group.first()).map(|anchor| (*anchor, true))
+        return None;
     }
+    let column =
+        columns.iter().rev().find(|column| column.iter().flatten().any(|candidate| *candidate != Panel::ToolSets)).or_else(|| columns.first())?;
+    column.last().and_then(|group| group.first()).map(|anchor| (*anchor, true))
 }
 
 /// The actions that open a panel with no recorded place in its dock: a new group beside its
@@ -411,6 +422,12 @@ impl DockContent<Panel> for Panels<'_> {
                     crate::shortcut_menus::palette(app, ui, crate::palettes::properties_section, crate::shortcut_menus::properties_entries)
                 });
             }
+            Panel::SymbolLibrary => {
+                #[cfg(not(target_arch = "wasm32"))]
+                crate::symbol_library::panel(app, ui);
+                #[cfg(target_arch = "wasm32")]
+                ui.label(crate::tl!("Symbol libraries are available in the desktop app."));
+            }
             Panel::ExternalRefs => {
                 egui::ScrollArea::both().id_salt("dock-xrefs").auto_shrink([false, false]).show(ui, |ui| crate::xrefs::section(app, ui));
             }
@@ -442,6 +459,7 @@ fn panel_limits(panel: &Panel) -> PanelLimits {
         Panel::QuickCalc => (egui::vec2(240.0, 160.0), 600.0),
         Panel::ToolSets => (egui::vec2(220.0, 150.0), 480.0),
         Panel::Layers | Panel::Properties | Panel::ExternalRefs => (egui::vec2(220.0, 100.0), 720.0),
+        Panel::SymbolLibrary => (egui::vec2(280.0, 240.0), 760.0),
     };
     PanelLimits { min, max: egui::vec2(max_width, 1_000_000.0) }
 }

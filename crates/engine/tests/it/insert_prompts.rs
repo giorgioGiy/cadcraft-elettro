@@ -1,7 +1,7 @@
 //! Command-line INSERT: X/Y/Z scale prompts and the Basepoint/Scale/X/Y/Z/Rotate options (#245).
 
 use cadcraft_engine::Session;
-use cadcraft_engine::doc::EntityKind;
+use cadcraft_engine::doc::{Attrib, EntityKind};
 use serde_json::json;
 
 /// (x, y, x scale, y scale, rotation in degrees) of every block reference, in drawing order.
@@ -52,6 +52,30 @@ fn script_insert_reads_x_and_y_scale_then_rotation_and_honours_its_options() {
     // The JSON form takes [x, y] scale factors and a base point too.
     s.execute("insert", &json!({ "name": "B1", "at": [0, 80], "scale": [2, 3], "basePoint": [10, 0] })).unwrap();
     assert_eq!(inserts(&s).last(), Some(&(-20.0, 80.0, 2.0, 3.0, 0.0)));
+}
+
+#[test]
+fn interactive_insert_preserves_repeated_attribute_tags_by_position() {
+    let mut s = Session::new();
+    for (default, y) in [("prima", 0), ("seconda", 1), ("terza", 2)] {
+        s.execute("attdef", &json!({ "tag": "NCUT", "prompt": "Tag Eplus ripetuto", "default": default, "at": [0, y] })).unwrap();
+    }
+    let handles: Vec<String> = s.doc().unwrap().model.handles().iter().map(|handle| handle.hex()).collect();
+    s.execute("block", &json!({ "name": "CC4", "base": [0, 0], "keep": "delete", "handles": handles })).unwrap();
+
+    s.script("-INSERT CC4 10,20 1 1 0\nuno\ndue\ntre\n").unwrap();
+    assert!(s.running.is_none(), "INSERT with duplicate Eplus tags must finish: {}", s.prompt_text());
+    let values = s
+        .doc()
+        .unwrap()
+        .model
+        .iter()
+        .find_map(|entity| match &entity.kind {
+            EntityKind::Insert(insert) => Some(insert.attribs.iter().map(|attribute: &Attrib| attribute.text.value.as_str()).collect::<Vec<_>>()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    assert_eq!(values, ["uno", "due", "tre"]);
 }
 
 /// (x, y, x scale, y scale, z scale, rotation in degrees) of the last block reference.

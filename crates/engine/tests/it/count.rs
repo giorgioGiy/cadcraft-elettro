@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use cadcraft_engine::doc::geom::Vec3;
-use cadcraft_engine::doc::{Block, Circle, Common, Entity, EntityKind, Handle, Insert, Space};
+use cadcraft_engine::doc::{Block, Circle, Common, Entity, EntityKind, Handle, Insert, Layer, Space};
 use cadcraft_engine::{Input, Session};
 use serde_json::{Value, json};
 
@@ -142,6 +142,181 @@ fn counttable_inserts_a_table() {
     s.execute("undo", &json!({})).unwrap();
     assert!(s.doc().unwrap().entity(h).is_none(), "one undo step removes the table");
     assert!(Session::new().execute("counttable", &json!({"at": [0, 0]})).is_err(), "nothing to count");
+}
+
+#[test]
+fn symbol_legend_uses_a_layer_all_layers_or_a_window_selection() {
+    let mut s = Session::new();
+    define(&mut s, "LAMP", vec![circle(0.0, 1.0)]);
+    define(&mut s, "SOCKET", vec![circle(0.0, 2.0)]);
+    define(&mut s, "WALL", vec![circle(0.0, 4.0)]);
+    define(&mut s, "Cart_pl", vec![circle(0.0, 3.0)]);
+    s.execute("blocks.description", &json!({"name":"LAMP", "description":"Lampada a soffitto"})).unwrap();
+    s.execute("blocks.description", &json!({"name":"SOCKET", "description":"Presa elettrica"})).unwrap();
+    s.execute("blocks.description", &json!({"name":"WALL", "description":"Parete edilizia"})).unwrap();
+    s.doc_mut().unwrap().layers.push(Layer { name: "IMPIANTO LUCE".into(), ..Layer::default() });
+    s.doc_mut().unwrap().layers.push(Layer { name: "IMPIANTO PRESE".into(), ..Layer::default() });
+    s.doc_mut().unwrap().layers.push(Layer { name: "ARCH|MURI".into(), ..Layer::default() });
+    s.doc_mut().unwrap().header.set_str("CLAYER", "IMPIANTO LUCE");
+    let lamp_a = put(&mut s, &Space::Model, insert("LAMP", 0.0, 1, 1));
+    let lamp_b = put(&mut s, &Space::Model, insert("LAMP", 10.0, 1, 1));
+    let socket = put(&mut s, &Space::Model, insert("SOCKET", 20.0, 1, 1));
+    let wall = put(&mut s, &Space::Model, insert("WALL", 25.0, 1, 1));
+    let title = put(&mut s, &Space::Model, insert("Cart_pl", 30.0, 1, 1));
+    for handle in [lamp_a, lamp_b] {
+        s.doc_mut().unwrap().modify_entity(handle, |entity| entity.common.layer = "IMPIANTO LUCE".into()).unwrap();
+    }
+    s.doc_mut().unwrap().modify_entity(socket, |entity| entity.common.layer = "IMPIANTO PRESE".into()).unwrap();
+    s.doc_mut().unwrap().modify_entity(wall, |entity| entity.common.layer = "ARCH|MURI".into()).unwrap();
+    s.doc_mut().unwrap().modify_entity(title, |entity| entity.common.layer = "IMPIANTO LUCE".into()).unwrap();
+
+    // With no explicit scope, the current layer is used even when its name is not numeric.
+    let result = s.execute("symbollegend", &json!({"at":[0,-20]})).unwrap();
+    assert_eq!(result["symbols"], 1);
+    let table_handle = Handle::parse_hex(result["handle"].as_str().unwrap()).unwrap();
+    let EntityKind::Table(table) = &s.doc().unwrap().entity(table_handle).unwrap().kind else { panic!("not a table") };
+    assert_eq!(table.cells[0][0].text, "LEGENDA SEGNI GRAFICI");
+    assert_eq!(table.cells[1][0].text, "SEGNO");
+    assert!(table.cells[2][1].text_height.is_some_and(|height| height < table.text_height));
+    assert_eq!(table.row_heights[0], table.text_height * 3.2, "the title is a distinct compact band");
+    assert_eq!(table.row_heights[1], table.text_height * 1.8, "the column heading is compact");
+    assert_eq!(table.row_heights[2], table.text_height * 2.0, "symbol rows follow the compact reference layout");
+    assert_eq!(table.cells[2][2].style, "Header", "quantities are centred in their narrow column");
+    assert!(table.col_widths[1] > table.col_widths[0] && table.col_widths[1] > table.col_widths[2]);
+    assert!(
+        table
+            .cells
+            .iter()
+            .any(|row| row.get(1).is_some_and(|cell| cell.text == "Lampada a soffitto") && row.get(2).is_some_and(|cell| cell.text == "2"))
+    );
+    assert_eq!(s.doc().unwrap().groups.last().map(|group| group.members.len()), Some(2), "table plus one fitted symbol graphic");
+
+    // A named layer may be chosen explicitly.
+    let second = s.execute("symbollegend", &json!({"at":[100,-20], "layer":"impianto prese"})).unwrap();
+    let second_handle = Handle::parse_hex(second["handle"].as_str().unwrap()).unwrap();
+    let EntityKind::Table(second_table) = &s.doc().unwrap().entity(second_handle).unwrap().kind else { panic!("not a table") };
+    assert!(
+        second_table
+            .cells
+            .iter()
+            .any(|row| row.get(1).is_some_and(|cell| cell.text == "Presa elettrica") && row.get(2).is_some_and(|cell| cell.text == "1"))
+    );
+
+    // All layers includes both systems and still excludes graphics created by older legends.
+    let all = s.execute("symbollegend", &json!({"at":[150,-20], "allLayers":true})).unwrap();
+    let all_handle = Handle::parse_hex(all["handle"].as_str().unwrap()).unwrap();
+    let EntityKind::Table(all_table) = &s.doc().unwrap().entity(all_handle).unwrap().kind else { panic!("not a table") };
+    assert!(
+        all_table
+            .cells
+            .iter()
+            .any(|row| row.get(1).is_some_and(|cell| cell.text == "Lampada a soffitto") && row.get(2).is_some_and(|cell| cell.text == "2"))
+    );
+    assert!(
+        all_table
+            .cells
+            .iter()
+            .any(|row| row.get(1).is_some_and(|cell| cell.text == "Presa elettrica") && row.get(2).is_some_and(|cell| cell.text == "1"))
+    );
+    assert!(all_table.cells.iter().flatten().all(|cell| cell.text != "Cart_pl"), "title blocks do not belong in a symbol legend");
+    assert!(
+        all_table.cells.iter().flatten().all(|cell| cell.text != "Parete edilizia"),
+        "architectural blocks do not belong in an electrical legend"
+    );
+    let base_height = all_table.text_height;
+    let base_description_height = all_table.cells[2][1].text_height.unwrap();
+    let unfiltered = s.execute("symbollegend", &json!({"at":[160,-20], "allLayers":true, "electricalOnly":false})).unwrap();
+    let unfiltered_handle = Handle::parse_hex(unfiltered["handle"].as_str().unwrap()).unwrap();
+    let EntityKind::Table(unfiltered_table) = &s.doc().unwrap().entity(unfiltered_handle).unwrap().kind else { panic!("not a table") };
+    assert!(
+        unfiltered_table.cells.iter().flatten().any(|cell| cell.text == "Parete edilizia"),
+        "scripts can explicitly request a general-purpose unfiltered legend"
+    );
+    let scaled = s.execute("symbollegend", &json!({"at":[175,-20], "allLayers":true, "scale":2.0})).unwrap();
+    let scaled_handle = Handle::parse_hex(scaled["handle"].as_str().unwrap()).unwrap();
+    let EntityKind::Table(scaled_table) = &s.doc().unwrap().entity(scaled_handle).unwrap().kind else { panic!("not a table") };
+    assert!((scaled_table.text_height - base_height * 2.0).abs() < 1e-9, "the whole legend follows its scale");
+    assert!(
+        (scaled_table.cells[2][1].text_height.unwrap() - base_description_height * 2.0).abs() < 1e-9,
+        "description text follows the legend scale too"
+    );
+
+    // A window/pick selection is represented by handles and can omit the quantity column.
+    let selected = s.execute("symbollegend", &json!({"at":[200,-20], "handles":[socket.hex()], "quantity":false})).unwrap();
+    let selected_handle = Handle::parse_hex(selected["handle"].as_str().unwrap()).unwrap();
+    let EntityKind::Table(selected_table) = &s.doc().unwrap().entity(selected_handle).unwrap().kind else { panic!("not a table") };
+    assert_eq!(selected_table.col_widths.len(), 2);
+    assert_eq!(selected_table.cells.len(), 3, "title, header and one selected symbol");
+    assert_eq!(selected_table.cells[2][1].text, "Presa elettrica");
+
+    // The toolbar/command-line path reaches and accepts the final insertion point too.
+    s.cmdline("legenda").unwrap();
+    s.input(Input::Text("1".into())).unwrap();
+    s.input(Input::Keyword("No".into())).unwrap();
+    s.input(Input::Keyword("Layer".into())).unwrap();
+    assert!(s.current_prompt().is_some_and(|prompt| prompt.accept.text));
+    s.input(Input::Text("IMPIANTO PRESE".into())).unwrap();
+    assert!(s.current_prompt().is_some_and(|prompt| prompt.accept.point));
+    let preview = s.preview(cadcraft_engine::doc::geom::Vec2::new(300.0, -20.0));
+    assert!(preview.iter().any(|entity| matches!(entity.kind, EntityKind::Table(_))), "the table follows the cursor");
+    s.input(Input::Point(cadcraft_engine::doc::geom::Vec2::new(300.0, -20.0))).unwrap();
+    assert!(s.running.is_none(), "the point completes the interactive command");
+
+    // Right-click/Enter also confirms the point under the cursor.
+    s.cmdline("legenda").unwrap();
+    s.input(Input::Text("1".into())).unwrap();
+    s.input(Input::Keyword("No".into())).unwrap();
+    s.input(Input::Keyword("All".into())).unwrap();
+    s.cursor = cadcraft_engine::doc::geom::Vec2::new(400.0, -20.0);
+    s.input(Input::Enter).unwrap();
+    assert!(s.running.is_none(), "Enter confirms the cursor instead of leaving the command stuck");
+}
+
+#[test]
+fn symbol_legend_keeps_notec_visible_and_separates_different_values() {
+    let mut s = Session::new();
+    s.doc_mut().unwrap().layers.push(Layer { name: "Fm".into(), ..Layer::default() });
+    s.doc_mut().unwrap().header.set_str("CLAYER", "Fm");
+    s.execute(
+        "attdef",
+        &json!({
+            "tag": "NOTEC",
+            "default": "",
+            "at": [0.0, 1.5],
+            "height": 0.5,
+            "invisible": true
+        }),
+    )
+    .unwrap();
+    s.execute("circle", &json!({"center": [0.0, 0.0], "radius": 1.0})).unwrap();
+    let handles: Vec<_> = s.doc().unwrap().model.iter().map(|entity| entity.handle.hex()).collect();
+    s.execute("block", &json!({"name": "BREAKER", "base": [0.0, 0.0], "handles": handles, "keep": "delete"})).unwrap();
+    s.execute("blocks.description", &json!({"name": "BREAKER", "description": "Interruttore automatico"})).unwrap();
+    s.execute("insert", &json!({"name": "BREAKER", "at": [10.0, 5.0], "scale": 2.0, "rotation": 30.0, "attribs": {"NOTEC": "10 A"}})).unwrap();
+    s.execute("insert", &json!({"name": "BREAKER", "at": [20.0, 5.0], "scale": 0.5, "rotation": 90.0, "attribs": {"NOTEC": "16 A"}})).unwrap();
+
+    let result = s.execute("symbollegend", &json!({"at": [0.0, -10.0], "allLayers": true})).unwrap();
+    assert_eq!(result["symbols"], 2, "different NOTEC ratings need separate legend rows");
+    let values: Vec<_> = s
+        .doc()
+        .unwrap()
+        .groups
+        .last()
+        .unwrap()
+        .members
+        .iter()
+        .skip(1)
+        .filter_map(|handle| s.doc().unwrap().entity(*handle))
+        .filter_map(|entity| match &entity.kind {
+            EntityKind::Insert(insert) => insert.attribs.iter().find(|attribute| attribute.tag.eq_ignore_ascii_case("NOTEC")),
+            _ => None,
+        })
+        .map(|attribute| {
+            assert!(!attribute.invisible, "NOTEC must be visible in the fitted legend symbol");
+            attribute.text.value.clone()
+        })
+        .collect();
+    assert_eq!(values, vec!["10 A", "16 A"]);
 }
 
 /// Self-referencing blocks and a ten-way fan-out twenty levels deep finish at once and never

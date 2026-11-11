@@ -64,6 +64,13 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("counttable", "Count Table", count::run_counttable)
             .params("{at: [x,y], space?: current (default)|model|all|<layout>, nested?: bool} → {handle}: a table of the block counts")
             .interactive(|_| Ok(count::table_machine())),
+        CommandSpec::new("symbollegend", "Symbol Legend", count::run_symbollegend)
+            .menu(&["Draw", "Symbol Legend"])
+            .alias(&["legenda", "legendasimboli"])
+            .params(
+                "{at: [x,y], handles?: [...] (window/selection), layer?: name (default: current layer), allLayers?: bool, electricalOnly?: bool (default true; excludes architectural/common/unclassified blocks), quantity?: bool (default true), scale?: 0.1..10 (default 1)} → {handle, symbols, group}: LEGENDA SEGNI GRAFICI",
+            )
+            .interactive(|_| Ok(count::legend_machine())),
         CommandSpec::new("count", "Count", count::run_count)
             .menu(&["Tools", "Count"])
             .params(count::PARAMS)

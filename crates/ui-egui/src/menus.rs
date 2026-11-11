@@ -18,6 +18,17 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("pagine", "Gestione pagine...", &["View", "Fogli", "Gestione pagine..."], None),
     ("gestionepagine", "Gestione pagine", &[], None),
     ("ui.dialog.pages", "Gestione pagine", &[], None),
+    ("planimetria", "Foglio planimetrico...", &["Insert", "Foglio planimetrico..."], None),
+    ("foglioplanimetrico", "Foglio planimetrico...", &[], None),
+    ("ui.dialog.planimetry", "Foglio planimetrico...", &[], None),
+    ("impianti", "Visibilità impianti...", &["View", "Visibilità impianti..."], None),
+    ("visibilitaimpianti", "Visibilità impianti...", &[], None),
+    ("ui.dialog.electrical_layers", "Visibilità impianti...", &[], None),
+    ("ui.dialog.symbollegend", "Legenda simboli...", &[], None),
+    ("scalasimboli", "Scala simboli...", &["Insert", "Scala simboli..."], None),
+    ("ui.dialog.symbol_scale", "Scala simboli...", &[], None),
+    ("simbolodaldisegno", "Aggiungi simbolo dal disegno...", &[], None),
+    ("ui.symbols.from_drawing", "Aggiungi simbolo dal disegno...", &[], None),
     ("ui.spacemouse", "3D Mouse...", &["Tools", "3D Mouse..."], None),
     ("ui.spacemouse.calibrate", "Calibrate 3D Mouse", &[], None),
     ("ui.spacemouse.navigate", "3D Mouse Navigation", &[], None),
@@ -95,6 +106,33 @@ pub fn run_ui_command(app: &mut CadApp, id: &str, params: &Value) -> Option<Resu
 }
 
 fn route_ui_subsystems(app: &mut CadApp, id: &str, params: &Value) -> Option<Result<Value, String>> {
+    if matches!(id, "impianti" | "visibilitaimpianti" | "ui.dialog.electrical_layers") && params.is_null() {
+        if app.session.state().is_err() {
+            return Some(Err("Aprire prima un disegno".into()));
+        }
+        app.session.cancel();
+        app.ui.dialog = Some("electrical_layers".into());
+        return Some(Ok(Value::Null));
+    }
+    if matches!(id, "planimetria" | "foglioplanimetrico" | "ui.dialog.planimetry") && params.is_null() {
+        if app.session.state().is_err() {
+            return Some(Err("Aprire prima un disegno".into()));
+        }
+        app.session.cancel();
+        app.ui.dialog = Some("planimetry".into());
+        return Some(Ok(Value::Null));
+    }
+    if matches!(id, "scalasimboli" | "ui.dialog.symbol_scale") && params.is_null() {
+        if app.session.state().is_err() {
+            return Some(Err("Aprire prima un disegno".into()));
+        }
+        app.session.cancel();
+        app.ui.dialog = Some("symbol_scale".into());
+        return Some(Ok(Value::Null));
+    }
+    if let Some(result) = run_symbol_legend_dialog_command(app, id, params) {
+        return Some(result);
+    }
     if let Some(result) = crate::spacemouse::route(app, id, params) {
         return Some(result);
     }
@@ -324,6 +362,18 @@ fn run_page_manager_command(app: &mut CadApp, id: &str) -> Option<Result<Value, 
     }
     app.session.cancel();
     app.ui.dialog = Some("pages".into());
+    Some(Ok(Value::Null))
+}
+
+fn run_symbol_legend_dialog_command(app: &mut CadApp, id: &str, params: &Value) -> Option<Result<Value, String>> {
+    if !matches!(id, "symbollegend" | "legenda" | "legendasimboli" | "ui.dialog.symbollegend") || !params.is_null() {
+        return None;
+    }
+    if app.session.state().is_err() {
+        return Some(Err("Aprire prima un disegno".into()));
+    }
+    app.session.cancel();
+    app.ui.dialog = Some("symbollegend".into());
     Some(Ok(Value::Null))
 }
 

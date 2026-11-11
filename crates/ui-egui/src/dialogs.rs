@@ -12,10 +12,17 @@ pub fn show(app: &mut CadApp, ctx: &egui::Context) {
     crate::attribute_editor::show(app, ctx);
     crate::mtext_editor::show(app, ctx);
     crate::quick::quick_properties(app, ctx);
+    // Commands queued by a closing dialog start here, after this frame's canvas input.  This
+    // prevents the button's pointer release from becoming the command's first drawing click.
+    crate::symbol_legend_dialog::start_pending(app, ctx);
     let Some(d) = app.ui.dialog.clone() else { return };
     let mut open = true;
     match d.as_str() {
         "pages" => crate::page_manager::dialog(app, ctx, &mut open),
+        "planimetry" => crate::planimetry_sheet::dialog(app, ctx, &mut open),
+        "electrical_layers" => crate::electrical_layers::dialog(app, ctx, &mut open),
+        "symbollegend" => crate::symbol_legend_dialog::dialog(app, ctx, &mut open),
+        "symbol_scale" => crate::symbol_scale_dialog::dialog(app, ctx, &mut open),
         "spacemouse" => crate::spacemouse::dialog(app, ctx, &mut open),
         "language" => language(app, ctx, &mut open),
         "layers" => crate::layers::dialog(app, ctx, &mut open),

@@ -39,13 +39,34 @@ fn drafting_settings_menu_opens_the_dialog() {
     assert_eq!(app.session.settings.gridmajor, 10);
 }
 
+#[test]
+fn planimetry_command_opens_the_graphical_dialog() {
+    let (mut app, picks) = app();
+    app.cmdline("PLANIMETRIA");
+    assert_eq!(app.ui.dialog.as_deref(), Some("planimetry"));
+    assert_eq!(picks.get(), 0);
+}
+
+#[test]
+fn symbol_scale_command_opens_the_graphical_dialog() {
+    let (mut app, picks) = app();
+    app.cmdline("SCALASIMBOLI");
+    assert_eq!(app.ui.dialog.as_deref(), Some("symbol_scale"));
+    assert_eq!(picks.get(), 0);
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn symbol_library_command_opens_the_dialog() {
+fn symbol_library_command_opens_the_docked_panel() {
     let (mut app, picks) = app();
+    app.ui
+        .docking
+        .apply(craft_ui::docking::Action::Close { panel: cadcraft_ui_egui::docking::Panel::SymbolLibrary }, cadcraft_ui_egui::docking::permissions)
+        .unwrap();
     app.cmdline("SIMBOLI");
-    assert_eq!(app.ui.dialog.as_deref(), Some("symbols"));
-    assert_eq!(picks.get(), 0, "opening the window must not open a file picker");
+    assert!(app.ui.docking.layout.contains(&cadcraft_ui_egui::docking::Panel::SymbolLibrary));
+    assert!(app.ui.dialog.is_none());
+    assert_eq!(picks.get(), 0, "opening the panel must not open a file picker");
 }
 
 #[test]

@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 
 use super::super::file::io;
 use super::super::modify::explode_kind;
-use super::{references_block, valid_block_name};
+use super::{referenced_block, references_block, valid_block_name};
 use crate::cmd::{bad, str_param};
 use crate::{EngineError, Result, Session};
 
@@ -89,6 +89,62 @@ fn read_file(_path: &str) -> Result<Vec<u8>> {
     }
     #[cfg(target_arch = "wasm32")]
     Err(bad("insert", "paths are not available on the web"))
+}
+
+/// Bring one named block (and the blocks it references) from a drawing into the active drawing.
+/// Existing definitions keep their contents, matching INSERT's table merge rules. The active
+/// drawing changes only after the source and the complete bounded dependency set are valid.
+pub(crate) fn import_named(s: &mut Session, path: &str, name: &str) -> Result<()> {
+    if s.doc()?.block(name).is_some() {
+        return Ok(());
+    }
+    let src = read_drawing(path)?;
+    import_named_from(s, &src, name)
+}
+
+fn import_named_from(s: &mut Session, src: &Drawing, name: &str) -> Result<()> {
+    let root = src
+        .block(name)
+        .map(|block| block.name.clone())
+        .ok_or_else(|| bad("electrical.sheet.create", format!("il file non contiene il blocco `{name}`")))?;
+    let mut wanted = BTreeSet::new();
+    let mut pending = vec![root.clone()];
+    while let Some(current) = pending.pop() {
+        if wanted.len() >= 4096 {
+            return Err(bad("electrical.sheet.create", "il cartiglio contiene troppi blocchi annidati"));
+        }
+        let Some(block) = src.block(&current) else {
+            return Err(bad("electrical.sheet.create", format!("blocco annidato `{current}` non trovato nel file sorgente")));
+        };
+        if !wanted.insert(block.name.clone()) {
+            continue;
+        }
+        pending.extend(block.entities.iter().filter_map(|entity| referenced_block(entity)));
+    }
+
+    let mut drawing = s.doc()?.clone();
+    merge_tables(&mut drawing, src);
+    let renames =
+        wanted.iter().filter(|block| drawing.block(block).is_none()).map(|block| (block.clone(), block.clone())).collect::<BTreeMap<_, _>>();
+    for block_name in &wanted {
+        if drawing.block(block_name).is_some() {
+            continue;
+        }
+        let Some(source) = src.block(block_name) else {
+            return Err(bad("electrical.sheet.create", format!("blocco `{block_name}` non disponibile")));
+        };
+        let mut block = (**source).clone();
+        block.entities = Default::default();
+        for entity in source.entities.iter() {
+            block.entities.push(adopt(&mut drawing, entity, &renames));
+        }
+        drawing.blocks.insert(block.name.clone(), Arc::new(block));
+    }
+    if drawing.block(&root).is_none() {
+        return Err(bad("electrical.sheet.create", format!("impossibile importare il blocco `{root}`")));
+    }
+    *s.doc_mut()? = drawing;
+    Ok(())
 }
 
 /// (Re)define block `name` from `src`'s model space with base point `$INSBASE`, adding the
@@ -268,5 +324,35 @@ mod tests {
         let before = d.mline_styles.len();
         merge_tables(&mut d, &src);
         assert_eq!(d.mline_styles.len(), before);
+    }
+
+    #[test]
+    fn named_block_import_brings_only_its_bounded_dependencies() {
+        let mut source = Drawing::default();
+        let nested = Block::new("TITLE_DETAIL");
+        source.blocks.insert("TITLE_DETAIL".into(), Arc::new(nested));
+        let mut title = Block::new("Cart_pl");
+        title.entities.push(Entity::new(
+            Handle(0x51),
+            EntityKind::Insert(cadcraft_doc::Insert {
+                block: "TITLE_DETAIL".into(),
+                insert: Default::default(),
+                scale: cadcraft_geom::Vec3::new(1.0, 1.0, 1.0),
+                rotation: 0.0,
+                attribs: Vec::new(),
+                cols: 1,
+                rows: 1,
+                col_spacing: 0.0,
+                row_spacing: 0.0,
+            }),
+        ));
+        source.blocks.insert("Cart_pl".into(), Arc::new(title));
+        source.blocks.insert("UNRELATED".into(), Arc::new(Block::new("UNRELATED")));
+        let mut session = Session::new();
+        import_named_from(&mut session, &source, "cart_PL").unwrap();
+        let drawing = session.doc().unwrap();
+        assert!(drawing.block("Cart_pl").is_some());
+        assert!(drawing.block("TITLE_DETAIL").is_some());
+        assert!(drawing.block("UNRELATED").is_none());
     }
 }

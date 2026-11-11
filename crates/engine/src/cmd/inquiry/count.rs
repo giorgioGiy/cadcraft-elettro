@@ -5,11 +5,11 @@
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
-use cadcraft_doc::{Drawing, Entity, EntityKind, Handle, Insert, MAX_BLOCK_DEPTH, Space};
-use cadcraft_geom::{Mat3, Vec2};
+use cadcraft_doc::{Attrib, Drawing, Entity, EntityKind, Handle, Insert, MAX_BLOCK_DEPTH, Space};
+use cadcraft_geom::{Mat3, Vec2, Vec3};
 use serde_json::{Value, json};
 
-use super::super::{bad, bool_or, point_req, str_param, targets};
+use super::super::{bad, bool_or, point_req, size_param, str_param, targets};
 
 use super::SelfCheck;
 use crate::{Accept, Input, Interactive, Prompt, Result, Session, Step};
@@ -33,6 +33,11 @@ pub(super) fn machine() -> Box<dyn Interactive> {
 /// COUNTTABLE's interactive command-line prompt machine (it asks for the insertion point).
 pub(super) fn table_machine() -> Box<dyn Interactive> {
     Box::new(CountTableM)
+}
+
+/// SYMBOLLEGEND's prompt machine: active page or a pick/window selection, quantities, point.
+pub(super) fn legend_machine() -> Box<dyn Interactive> {
+    Box::new(SymbolLegendM::default())
 }
 
 /// Where COUNT looks.
@@ -446,6 +451,291 @@ pub(super) fn run_counttable(s: &mut Session, p: &Value) -> Result<Value> {
     }))
 }
 
+const LEGEND_GROUP_DESCRIPTION: &str = "CADCraft symbol legend";
+const MAX_LEGEND_ROWS: usize = 1_000;
+const LEGEND_SYMBOL_WIDTH_EM: f64 = 5.5;
+const LEGEND_QUANTITY_WIDTH_EM: f64 = 5.5;
+const LEGEND_TITLE_HEIGHT_EM: f64 = 3.2;
+const LEGEND_HEADER_HEIGHT_EM: f64 = 1.8;
+const LEGEND_DATA_HEIGHT_EM: f64 = 2.0;
+
+#[derive(Clone)]
+struct LegendRow {
+    block: String,
+    description: String,
+    /// `NOTEC` is the Eplus per-reference label (for example `10 A`, `EDP` or `TV`). Keep it in
+    /// block coordinates so the fitted legend copy can place it with the symbol at any scale.
+    notec: Option<Attrib>,
+    count: u64,
+}
+
+/// Prefer the standard block-definition description (filled by symbol libraries), then a
+/// readable instance attribute, and use the block code only as a last resort.
+fn legend_description(d: &Drawing, i: &Insert) -> String {
+    if let Some(description) = d.block(&i.block).map(|block| block.description.trim()).filter(|description| !description.is_empty()) {
+        return description.to_string();
+    }
+    const TAGS: [&str; 9] = ["DESCRIZIONE", "DESCRIPTION", "DESC", "DENOMINAZIONE", "NOME", "OGGETTO", "UTENZA", "TIPO", "SIGLA"];
+    TAGS.iter()
+        .find_map(|tag| {
+            i.attribs
+                .iter()
+                .find(|a| a.tag.eq_ignore_ascii_case(tag))
+                .map(|a| a.text.value.trim())
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| i.block.clone())
+}
+
+/// A visible `NOTEC` attribute expressed in the block definition's coordinates. Reference
+/// attributes are stored in drawing coordinates, so normalize them before fitting the legend
+/// symbol. Degenerate hostile insert transforms simply omit the note instead of failing.
+fn legend_notec(d: &Drawing, insert: &Insert) -> Option<Attrib> {
+    let block = d.block(&insert.block)?;
+    let inverse = insert.transform(block.base.xy()).inverse()?;
+    let mut note =
+        insert.attribs.iter().find(|attribute| attribute.tag.eq_ignore_ascii_case("NOTEC") && !attribute.text.value.trim().is_empty())?.clone();
+    note.invisible = false;
+    let mut entity = EntityKind::AttDef(note);
+    entity.transform(&inverse);
+    match entity {
+        EntityKind::AttDef(note) => Some(note),
+        _ => None,
+    }
+}
+
+/// Place a normalized legend note with one fitted block reference. Attributes draw in world
+/// coordinates rather than inheriting the INSERT transform, hence this explicit transformation.
+fn placed_legend_notec(d: &Drawing, row: &LegendRow, insert: &Insert) -> Vec<Attrib> {
+    let (Some(note), Some(block)) = (&row.notec, d.block(&row.block)) else { return Vec::new() };
+    let mut entity = EntityKind::AttDef(note.clone());
+    entity.transform(&insert.transform(block.base.xy()));
+    match entity {
+        EntityKind::AttDef(note) => vec![note],
+        _ => Vec::new(),
+    }
+}
+
+/// Handles used only to display symbols inside an older generated legend must not be counted as
+/// drawing symbols when the legend is made again.
+fn legend_members(d: &Drawing) -> std::collections::HashSet<Handle> {
+    d.groups.iter().filter(|group| group.description == LEGEND_GROUP_DESCRIPTION).flat_map(|group| group.members.iter().copied().skip(1)).collect()
+}
+
+fn legend_rows(s: &Session, p: &Value) -> Result<Vec<LegendRow>> {
+    const CMD: &str = "symbollegend";
+    let selected = p.get("handles").filter(|value| !value.is_null()).map(|_| targets(s, p)).transpose()?;
+    let d = s.doc()?;
+    let excluded = legend_members(d);
+    let active = d.header.str("CLAYER", "0");
+    let all_layers = bool_or(p, "allLayers", false);
+    let electrical_only = bool_or(p, "electricalOnly", true);
+    let requested_layer = match p.get("layer") {
+        None => None,
+        Some(Value::String(layer)) if !layer.trim().is_empty() => Some(layer.trim()),
+        Some(Value::String(_)) => return Err(bad(CMD, "Layer name cannot be empty.")),
+        Some(_) => return Err(bad(CMD, "layer must be a string.")),
+    };
+    let handles: Vec<Handle> = match selected {
+        Some(handles) => handles,
+        None => {
+            let entities = d.space(&s.space()).ok_or_else(|| bad(CMD, "The active drawing space is not available."))?;
+            if all_layers {
+                entities.iter().map(|entity| entity.handle).collect()
+            } else {
+                let layer = requested_layer.unwrap_or(&active);
+                let canonical = d.layer(layer).ok_or_else(|| bad(CMD, format!("Layer \"{layer}\" does not exist.")))?.name.as_str();
+                entities.iter().filter(|entity| entity.common.layer.eq_ignore_ascii_case(canonical)).map(|entity| entity.handle).collect()
+            }
+        }
+    };
+    let mut rows: BTreeMap<String, LegendRow> = BTreeMap::new();
+    for handle in handles.into_iter().take(MAX_HANDLES) {
+        if excluded.contains(&handle) {
+            continue;
+        }
+        let Some(entity) = d.entity(handle) else { continue };
+        let EntityKind::Insert(insert) = &entity.kind else { continue };
+        if insert.block.starts_with('*') || super::super::electrical_layers::is_title_block(d, &insert.block) {
+            continue;
+        }
+        if electrical_only {
+            let electrical_layer = super::super::electrical_layers::is_electrical_layer(&entity.common.layer);
+            if !electrical_layer {
+                continue;
+            }
+        }
+        let block = d.block(&insert.block).map_or_else(|| insert.block.clone(), |definition| definition.name.clone());
+        let notec = legend_notec(d, insert);
+        // Different NOTEC values are different legend variants. Combining them would display one
+        // arbitrary rating/label while reporting the quantity of every variant.
+        let note_key = notec.as_ref().map(|attribute| attribute.text.value.trim().to_ascii_lowercase()).unwrap_or_default();
+        let key = format!("{}\0{note_key}", block.to_ascii_lowercase());
+        let copies = copies(insert);
+        let row = rows.entry(key).or_insert_with(|| LegendRow { block: block.clone(), description: legend_description(d, insert), notec, count: 0 });
+        row.count = row.count.saturating_add(copies);
+        if rows.len() > MAX_LEGEND_ROWS {
+            return Err(bad(CMD, format!("A legend can contain at most {MAX_LEGEND_ROWS} different symbols.")));
+        }
+    }
+    if rows.is_empty() {
+        return Err(bad(CMD, "No symbol block references were found."));
+    }
+    let mut rows: Vec<_> = rows.into_values().collect();
+    rows.sort_by(|left, right| {
+        left.description
+            .to_ascii_lowercase()
+            .cmp(&right.description.to_ascii_lowercase())
+            .then_with(|| left.block.to_ascii_lowercase().cmp(&right.block.to_ascii_lowercase()))
+    });
+    Ok(rows)
+}
+
+fn symbollegend_table(s: &Session, rows: &[LegendRow], at: Vec2, quantity: bool, scale: f64) -> cadcraft_doc::Table {
+    let columns = if quantity { 3 } else { 2 };
+    let cells: Vec<Vec<String>> = rows
+        .iter()
+        .map(|row| {
+            let mut cells = vec![String::new(), row.description.clone()];
+            if quantity {
+                cells.push(row.count.to_string());
+            }
+            cells
+        })
+        .collect();
+    let mut header = vec!["SEGNO".to_string(), "DESCRIZIONE".to_string()];
+    if quantity {
+        header.push("QUANTITÀ".into());
+    }
+    let mut style = table_style(s);
+    // Imported electrical drawings often keep the generic 0.18 table style even though their
+    // drawing text is 2.5 units high. TEXTSIZE is the useful drafting-scale signal in that case.
+    let drawing_text = s.doc().map_or(style.text_height, |drawing| drawing.header.f64("TEXTSIZE", style.text_height));
+    if drawing_text.is_finite() && drawing_text > 0.0 {
+        style.text_height = style.text_height.max(drawing_text);
+    }
+    style.text_height *= scale;
+    let mut table = super::super::table::make_table(&style, at, rows.len(), columns, None, None, Some("LEGENDA SEGNI GRAFICI"), Some(header), &cells);
+    let text_height = table.text_height.abs().max(0.18);
+    let symbol_width = text_height * LEGEND_SYMBOL_WIDTH_EM;
+    let description_chars = rows.iter().map(|row| row.description.chars().count()).max().unwrap_or(18).clamp(18, 60) as f64;
+    let description_width = text_height * (description_chars * 0.60 + 2.5);
+    table.col_widths =
+        if quantity { vec![symbol_width, description_width, text_height * LEGEND_QUANTITY_WIDTH_EM] } else { vec![symbol_width, description_width] };
+    if let Some(height) = table.row_heights.first_mut() {
+        *height = text_height * LEGEND_TITLE_HEIGHT_EM;
+    }
+    if let Some(height) = table.row_heights.get_mut(1) {
+        *height = text_height * LEGEND_HEADER_HEIGHT_EM;
+    }
+    for height in table.row_heights.iter_mut().skip(2) {
+        *height = text_height * LEGEND_DATA_HEIGHT_EM;
+    }
+    // Descriptions are secondary information: keep them legible but below the symbol and count
+    // emphasis. The override must use the already-scaled table height, otherwise TEXTSIZE and
+    // the legend's Scale field affect the headings but leave descriptions at the old size.
+    let description_height = text_height * 0.78;
+    for row in table.cells.iter_mut().skip(2) {
+        if let Some(cell) = row.get_mut(1) {
+            cell.text_height = Some(description_height);
+        }
+        if quantity && let Some(cell) = row.get_mut(2) {
+            cell.style = "Header".into();
+        }
+    }
+    table
+}
+
+enum LegendScope {
+    Selection(Vec<Handle>),
+    Layer(String),
+    AllLayers,
+}
+
+fn symbollegend_params(scope: &LegendScope, quantity: bool, scale: f64, at: Vec2) -> Value {
+    let mut params = json!({ "at": [at.x, at.y], "quantity": quantity, "scale": scale });
+    match scope {
+        LegendScope::Selection(handles) => params["handles"] = json!(hex(handles)),
+        LegendScope::Layer(layer) => params["layer"] = json!(layer),
+        LegendScope::AllLayers => params["allLayers"] = json!(true),
+    }
+    params
+}
+
+/// Insert the editable table and one fitted block reference over each first-column data cell.
+/// The table and its graphic references form one selectable group and one Undo operation.
+pub(super) fn run_symbollegend(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "symbollegend";
+    let at = point_req(CMD, p, "at")?;
+    let quantity = bool_or(p, "quantity", true);
+    let scale = size_param(CMD, p, "scale", false)?.unwrap_or(1.0);
+    if !(0.1..=10.0).contains(&scale) {
+        return Err(bad(CMD, "scale must be between 0.1 and 10."));
+    }
+    let rows = legend_rows(s, p)?;
+    let table = symbollegend_table(s, &rows, at, quantity, scale);
+    let text_height = table.text_height.abs().max(0.18);
+    let symbol_width = table.col_widths.first().copied().unwrap_or(text_height * 8.0);
+
+    // Compute the fitted references before mutating the document. An empty or malformed block
+    // leaves its cell blank instead of failing the whole operation.
+    let mut graphics = Vec::new();
+    let title_and_header_height: f64 = table.row_heights.iter().take(2).copied().sum();
+    let data_height = table.row_heights.get(2).copied().unwrap_or(text_height * LEGEND_DATA_HEIGHT_EM);
+    for (index, row) in rows.iter().enumerate() {
+        let mut dummy_insert = Insert {
+            block: row.block.clone(),
+            insert: Vec3::ZERO,
+            scale: Vec3::new(1.0, 1.0, 1.0),
+            rotation: 0.0,
+            attribs: Vec::new(),
+            cols: 1,
+            rows: 1,
+            col_spacing: 0.0,
+            row_spacing: 0.0,
+        };
+        dummy_insert.attribs = placed_legend_notec(s.doc()?, row, &dummy_insert);
+        let dummy = Entity::new(Handle(0), EntityKind::Insert(dummy_insert));
+        let bounds = cadcraft_doc::entity_bounds(s.doc()?, &dummy, 0);
+        if bounds.is_empty() || !bounds.width().is_finite() || !bounds.height().is_finite() {
+            continue;
+        }
+        let fit_x = symbol_width * 0.72 / bounds.width().max(1e-12);
+        let fit_y = data_height * 0.72 / bounds.height().max(1e-12);
+        let scale = fit_x.min(fit_y).clamp(1e-9, 1e9);
+        let center = Vec2::new(at.x + symbol_width / 2.0, at.y - title_and_header_height - data_height * (index as f64 + 0.5));
+        let insert = center - bounds.center() * scale;
+        let mut graphic = Insert {
+            block: row.block.clone(),
+            insert: insert.to3(0.0),
+            scale: Vec3::new(scale, scale, 1.0),
+            rotation: 0.0,
+            attribs: Vec::new(),
+            cols: 1,
+            rows: 1,
+            col_spacing: 0.0,
+            row_spacing: 0.0,
+        };
+        graphic.attribs = placed_legend_notec(s.doc()?, row, &graphic);
+        graphics.push(EntityKind::Insert(graphic));
+    }
+
+    let table_handle = s.add_entity(EntityKind::Table(table))?;
+    let mut members = vec![table_handle];
+    for graphic in graphics {
+        members.push(s.add_entity(graphic)?);
+    }
+    let group = super::super::groups::create(s, None, LEGEND_GROUP_DESCRIPTION, &members, true)?;
+    Ok(json!({
+        "handle": table_handle.hex(),
+        "symbols": rows.len(),
+        "quantity": quantity,
+        "group": group,
+        "message": format!("Symbol legend inserted: {} row(s).", rows.len()),
+    }))
+}
+
 /// Echo a result's `message` at the command line, one line at a time.
 fn echo_lines(s: &mut Session, r: &Value) {
     if let Some(m) = r.get("message").and_then(Value::as_str) {
@@ -502,5 +792,113 @@ impl Interactive for CountTableM {
             Input::Enter => Ok(Step::Done),
             _ => Ok(Step::Continue),
         }
+    }
+}
+
+#[derive(Default)]
+struct SymbolLegendM {
+    scope: Option<LegendScope>,
+    ask_layer: bool,
+    scale: Option<f64>,
+    quantity: Option<bool>,
+}
+
+impl Interactive for SymbolLegendM {
+    fn name(&self) -> &'static str {
+        "SYMBOLLEGEND"
+    }
+    fn prompt(&self, s: &Session) -> Prompt {
+        if self.scale.is_none() {
+            Prompt::new("Legend scale", Accept::NUMBER).default("1")
+        } else if self.quantity.is_none() {
+            Prompt::new("Include symbol quantities?", Accept::TEXT).kw(&["Yes", "No"]).default("Yes")
+        } else if self.scope.is_none() && self.ask_layer {
+            let active = s.doc().map_or_else(|_| "0".to_string(), |drawing| drawing.header.str("CLAYER", "0"));
+            Prompt::new("Enter symbol layer name", Accept::TEXT).default(active)
+        } else if self.scope.is_none() {
+            Prompt::new("Select symbols by pick/window or [Layer/All]", Accept::SELECT).kw(&["Layer", "All"]).default("Layer")
+        } else {
+            Prompt::new("Specify legend insertion point", Accept::POINT)
+        }
+    }
+    fn input(&mut self, s: &mut Session, i: Input) -> Result<Step> {
+        if self.scale.is_none() {
+            match i {
+                Input::Cancel => return Ok(Step::Cancel),
+                Input::Text(value) => {
+                    let scale = value.trim().parse::<f64>().ok().filter(|value| value.is_finite() && (0.1..=10.0).contains(value));
+                    let Some(scale) = scale else {
+                        s.echo("Scale must be between 0.1 and 10.");
+                        return Ok(Step::Continue);
+                    };
+                    self.scale = Some(scale);
+                }
+                Input::Enter => self.scale = Some(1.0),
+                _ => return Ok(Step::Continue),
+            }
+            return Ok(Step::Continue);
+        }
+        if self.quantity.is_none() {
+            match i {
+                Input::Cancel => return Ok(Step::Cancel),
+                Input::Keyword(answer) => self.quantity = Some(answer == "Yes"),
+                Input::Text(answer) => self.quantity = Some(!answer.trim().to_ascii_lowercase().starts_with('n')),
+                Input::Enter => self.quantity = Some(true),
+                _ => return Ok(Step::Continue),
+            }
+            return Ok(Step::Continue);
+        }
+        if self.scope.is_none() && self.ask_layer {
+            match i {
+                Input::Cancel => return Ok(Step::Cancel),
+                Input::Text(layer) if !layer.trim().is_empty() => self.scope = Some(LegendScope::Layer(layer.trim().to_string())),
+                Input::Enter => {
+                    let active = s.doc()?.header.str("CLAYER", "0");
+                    self.scope = Some(LegendScope::Layer(active));
+                }
+                _ => return Ok(Step::Continue),
+            }
+            self.ask_layer = false;
+            return Ok(Step::Continue);
+        }
+        if self.scope.is_none() {
+            match i {
+                Input::Cancel => return Ok(Step::Cancel),
+                Input::Pick(handles) if !handles.is_empty() => self.scope = Some(LegendScope::Selection(handles)),
+                Input::Keyword(answer) if answer == "All" => self.scope = Some(LegendScope::AllLayers),
+                Input::Keyword(answer) if answer == "Layer" => self.ask_layer = true,
+                Input::Enter => self.ask_layer = true,
+                _ => return Ok(Step::Continue),
+            }
+            return Ok(Step::Continue);
+        }
+        match i {
+            Input::Cancel => Ok(Step::Cancel),
+            Input::Point(at) => {
+                let Some(scope) = self.scope.as_ref() else { return Ok(Step::Continue) };
+                let params = symbollegend_params(scope, self.quantity.unwrap_or(true), self.scale.unwrap_or(1.0), at);
+                let result = run_symbollegend(s, &params)?;
+                echo_lines(s, &result);
+                Ok(Step::Done)
+            }
+            // A right-click is translated to Enter by the desktop UI. At a point prompt it
+            // confirms the current cursor position, just like a primary click, rather than
+            // leaving the command apparently stuck.
+            Input::Enter => {
+                let Some(scope) = self.scope.as_ref() else { return Ok(Step::Continue) };
+                let params = symbollegend_params(scope, self.quantity.unwrap_or(true), self.scale.unwrap_or(1.0), s.cursor);
+                let result = run_symbollegend(s, &params)?;
+                echo_lines(s, &result);
+                Ok(Step::Done)
+            }
+            _ => Ok(Step::Continue),
+        }
+    }
+    fn preview(&self, s: &Session, cursor: Vec2) -> Vec<EntityKind> {
+        let Some(quantity) = self.quantity else { return Vec::new() };
+        let Some(scope) = self.scope.as_ref() else { return Vec::new() };
+        let params = symbollegend_params(scope, quantity, self.scale.unwrap_or(1.0), cursor);
+        let Ok(rows) = legend_rows(s, &params) else { return Vec::new() };
+        vec![EntityKind::Table(symbollegend_table(s, &rows, cursor, quantity, self.scale.unwrap_or(1.0)))]
     }
 }

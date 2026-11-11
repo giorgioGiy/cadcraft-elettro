@@ -3,8 +3,8 @@
 //! A thin shell over [`cadcraft_engine::Session`]: panels read engine state and act through
 //! commands (`app.run(id, params)`) or the command line (`app.cmdline(text)`). Nothing here owns
 //! drawing data. The layout follows the familiar CAD desktop: title and tool bar, file tabs,
-//! Tool Sets on the left, the drawing area with its command line, Layers and Properties on the
-//! right, layout tabs and drafting toggles in the status bar.
+//! Tool Sets, Layers and Properties on the left, the drawing area with its command line, the
+//! symbol library on the right, layout tabs and drafting toggles in the status bar.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
@@ -33,14 +33,18 @@ pub mod control;
 pub mod credits;
 pub mod dialogs;
 pub mod docking;
+mod electrical_layers;
 pub mod hatchdlg;
 mod mtext_editor;
 mod page_manager;
 mod panel_state;
+mod planimetry_sheet;
 pub mod spacemouse;
 pub mod switch;
+mod symbol_legend_dialog;
 #[cfg(not(target_arch = "wasm32"))]
 mod symbol_library;
+mod symbol_scale_dialog;
 // The External References palette.
 pub mod xrefs;
 
@@ -132,6 +136,13 @@ pub struct UiState {
     pub recent_files: Vec<String>,
     /// The folder the last APPLOAD file came from: the next pick starts there.
     pub last_lisp_dir: Option<String>,
+    /// Last graphical Symbol Legend choices, kept across drawings and restarts.
+    pub symbol_legend_scope: String,
+    pub symbol_legend_layer: String,
+    pub symbol_legend_quantity: bool,
+    pub symbol_legend_scale: f64,
+    /// DXF/DWG drawing used to import the external Eplus-compatible Cart_pl definition.
+    pub planimetry_title_block_source: String,
 }
 
 /// A DXF/DWG file version (2000 … 2018).
@@ -210,6 +221,11 @@ impl Default for UiState {
             save_version: SaveVersion::default().year().to_string(),
             recent_files: Vec::new(),
             last_lisp_dir: None,
+            symbol_legend_scope: "current".into(),
+            symbol_legend_layer: String::new(),
+            symbol_legend_quantity: true,
+            symbol_legend_scale: 1.0,
+            planimetry_title_block_source: String::new(),
         }
     }
 }
@@ -225,6 +241,8 @@ pub struct Services {
     pub pick_lisp: Option<Box<dyn Fn(&str) -> Option<String>>>,
     /// Pick a local ZIP containing DXF/DWG symbol files.
     pub pick_symbol_library: Option<Box<dyn Fn() -> Option<String>>>,
+    /// Pick one local DWG/DXF file to copy into the CADCraft personal symbol library.
+    pub pick_symbol_file: Option<Box<dyn Fn() -> Option<String>>>,
     /// The host has no file system to read a path from (the browser): a dropped file's contents
     /// are what it loads, and APPLOAD says so instead of asking for a name it cannot read.
     pub no_file_system: bool,
@@ -483,8 +501,23 @@ impl CadApp {
         if !self.ui.recent_files.is_empty() {
             prefs["recentFiles"] = json!(self.ui.recent_files);
         }
+        if !self.ui.planimetry_title_block_source.is_empty() {
+            prefs["planimetryTitleBlockSource"] = json!(self.ui.planimetry_title_block_source);
+        }
         if let Some(dir) = &self.ui.last_lisp_dir {
             prefs["lispDir"] = json!(dir);
+        }
+        if self.ui.symbol_legend_scope != "current"
+            || !self.ui.symbol_legend_layer.is_empty()
+            || !self.ui.symbol_legend_quantity
+            || (self.ui.symbol_legend_scale - 1.0).abs() > f64::EPSILON
+        {
+            prefs["symbolLegend"] = json!({
+                "scope": self.ui.symbol_legend_scope,
+                "layer": self.ui.symbol_legend_layer,
+                "quantity": self.ui.symbol_legend_quantity,
+                "scale": self.ui.symbol_legend_scale,
+            });
         }
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(path) = self.symbol_library.source_path() {
@@ -519,6 +552,24 @@ impl CadApp {
         }
         if let Some(dir) = v.get("lispDir").and_then(Value::as_str).filter(|d| !d.is_empty()) {
             self.ui.last_lisp_dir = Some(dir.to_string());
+        }
+        if let Some(legend) = v.get("symbolLegend") {
+            if let Some(scope) = legend.get("scope").and_then(Value::as_str).filter(|scope| ["current", "layer", "all", "selection"].contains(scope))
+            {
+                self.ui.symbol_legend_scope = scope.to_string();
+            }
+            if let Some(layer) = legend.get("layer").and_then(Value::as_str) {
+                self.ui.symbol_legend_layer = layer.to_string();
+            }
+            if let Some(quantity) = legend.get("quantity").and_then(Value::as_bool) {
+                self.ui.symbol_legend_quantity = quantity;
+            }
+            if let Some(scale) = legend.get("scale").and_then(Value::as_f64).filter(|scale| scale.is_finite() && (0.1..=10.0).contains(scale)) {
+                self.ui.symbol_legend_scale = scale;
+            }
+        }
+        if let Some(path) = v.get("planimetryTitleBlockSource").and_then(Value::as_str) {
+            self.ui.planimetry_title_block_source = path.to_string();
         }
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(path) = v.get("symbolLibrary").and_then(Value::as_str).filter(|path| !path.is_empty()) {
@@ -682,6 +733,8 @@ impl CadApp {
         self.gpu_fault_tick(ctx);
         managers::plot_window_resume(self, ctx);
         hatchdlg::resume(self);
+        #[cfg(not(target_arch = "wasm32"))]
+        symbol_library::tick(self, ctx);
         // What follows is frame work, once per layout frame or hidden tick.
         if ctx.current_pass_index() != 0 {
             return;

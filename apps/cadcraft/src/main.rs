@@ -181,6 +181,12 @@ fn services() -> Services {
         pick_symbol_library: Some(Box::new(|| {
             rfd::FileDialog::new().add_filter(i18n::t("Symbol libraries (ZIP)"), &["zip"]).pick_file().map(|path| path.to_string_lossy().to_string())
         })),
+        pick_symbol_file: Some(Box::new(|| {
+            rfd::FileDialog::new()
+                .add_filter(i18n::t("Symbol drawings (DWG, DXF)"), &["dwg", "dxf"])
+                .pick_file()
+                .map(|path| path.to_string_lossy().to_string())
+        })),
         no_file_system: false,
     }
 }

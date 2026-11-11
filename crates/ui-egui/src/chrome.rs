@@ -21,6 +21,8 @@ const TOOLBAR: &[&[(Icon, &str, &str, Option<&str>)]] = &[
         (Icon::SheetPrevious, "sheet.previous", "Foglio precedente", None),
         (Icon::SheetNext, "sheet.next", "Foglio successivo", None),
         (Icon::Table, "pagine", "Gestione pagine", None),
+        (Icon::PageSetup, "planimetria", "Foglio planimetrico", None),
+        (Icon::List, "legenda", "Legenda simboli", None),
     ],
     &[
         (Icon::Plot, "plot", "Print", None),
