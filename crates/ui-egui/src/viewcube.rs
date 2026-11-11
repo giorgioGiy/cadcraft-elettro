@@ -200,7 +200,7 @@ mod tests {
     use super::*;
     use cadcraft_engine::Session;
 
-    /// The app with the sample drawing, laid out once in a 1400×900 window.
+    /// The app with the sample drawing, laid out once in an 1800×900 window.
     fn app_and_ctx() -> (CadApp, egui::Context) {
         let mut app = CadApp::new(Session::empty(), crate::Services::default());
         app.ui.in_window_menu = true;
@@ -212,7 +212,7 @@ mod tests {
     }
 
     fn frame(app: &mut CadApp, ctx: &egui::Context, events: Vec<egui::Event>) {
-        let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))), events, ..Default::default() };
+        let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1800.0, 900.0))), events, ..Default::default() };
         let mut out = ctx.run_ui(raw, |ui| {
             app.logic(ui.ctx());
             app.ui(ui);
