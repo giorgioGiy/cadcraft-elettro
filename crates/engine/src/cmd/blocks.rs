@@ -323,6 +323,7 @@ enum AttributeValues<'a> {
 /// [`insert_scaled`] with values from a JSON map or in ATTDEF order. Interactive INSERT needs the ordered
 /// form because real electrical libraries can contain repeated tags; a JSON object cannot
 /// represent two different values for the same key.
+#[allow(clippy::too_many_arguments)]
 fn insert_scaled_values(
     s: &mut Session,
     name: &str,

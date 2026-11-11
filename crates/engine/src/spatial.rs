@@ -25,6 +25,10 @@ pub const MIN_INDEXED: usize = 256;
 /// Indexes kept alive (open drawings × spaces, plus a few undo states).
 const CACHE_SIZE: usize = 4;
 
+/// Batch size used only to exercise the incremental-index regression test.
+#[cfg(test)]
+const MAX_INCREMENTAL_ITEMS: usize = 16;
+
 /// Tree items carry (chunk serial, index within the chunk); draw indices are derived at query
 /// time so inserting or removing entities never invalidates other chunks' items.
 type Item = GeomWithData<Rectangle<[f64; 2]>, (u32, u32)>;
