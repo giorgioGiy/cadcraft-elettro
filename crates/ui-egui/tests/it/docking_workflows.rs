@@ -592,7 +592,7 @@ fn group_drag_bar_moves_the_whole_group_into_the_palette_column() {
         .expect("the Tool Sets group draws a drag bar");
     // Into the middle of the Properties group, as tabs.
     let properties = hit(&h, Hit::Tab(Panel::Properties));
-    let column = hit(&h, Hit::ColumnBar(Panel::Properties));
+    let column = hit(&h, Hit::ColumnBar(Panel::SymbolLibrary));
     let to = egui::pos2(column.center().x, properties.bottom() + 120.0);
     let document = h.state().session.doc().unwrap().clone();
     drag(&mut h, bar.center(), to);
