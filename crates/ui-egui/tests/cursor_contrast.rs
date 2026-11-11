@@ -47,7 +47,7 @@ impl Canvas {
         // Let layout and hover state settle, as in system_cursor.rs.
         for _ in 0..3 {
             let input = egui::RawInput {
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0))),
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1800.0, 800.0))),
                 events: vec![egui::Event::PointerMoved(at)],
                 ..Default::default()
             };
