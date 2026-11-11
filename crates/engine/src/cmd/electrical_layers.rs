@@ -373,6 +373,7 @@ mod tests {
             rows: 1,
             col_spacing: 0.0,
             row_spacing: 0.0,
+            clip: None,
         };
         s.doc_mut().unwrap().add(&Space::Model, Common { layer: layer.into(), ..Common::default() }, EntityKind::Insert(insert)).unwrap()
     }

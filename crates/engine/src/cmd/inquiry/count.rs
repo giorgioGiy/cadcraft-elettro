@@ -694,6 +694,7 @@ pub(super) fn run_symbollegend(s: &mut Session, p: &Value) -> Result<Value> {
             rows: 1,
             col_spacing: 0.0,
             row_spacing: 0.0,
+            clip: None,
         };
         dummy_insert.attribs = placed_legend_notec(s.doc()?, row, &dummy_insert);
         let dummy = Entity::new(Handle(0), EntityKind::Insert(dummy_insert));
@@ -716,6 +717,7 @@ pub(super) fn run_symbollegend(s: &mut Session, p: &Value) -> Result<Value> {
             rows: 1,
             col_spacing: 0.0,
             row_spacing: 0.0,
+            clip: None,
         };
         graphic.attribs = placed_legend_notec(s.doc()?, row, &graphic);
         graphics.push(EntityKind::Insert(graphic));

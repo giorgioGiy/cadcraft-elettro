@@ -2308,6 +2308,7 @@ mod tests {
             rows: 1,
             col_spacing: 0.0,
             row_spacing: 0.0,
+            clip: None,
         };
         let handle = drawing.add(&Space::Model, Common { layer: "FM".into(), ..Common::default() }, EntityKind::Insert(reference)).unwrap();
         (drawing, handle)
@@ -2375,6 +2376,7 @@ mod tests {
                     rows: 1,
                     col_spacing: 0.0,
                     row_spacing: 0.0,
+                    clip: None,
                 }),
             )
             .unwrap();
@@ -2393,6 +2395,7 @@ mod tests {
                     rows: 1,
                     col_spacing: 0.0,
                     row_spacing: 0.0,
+                    clip: None,
                 }),
             )
             .unwrap();
