@@ -8,6 +8,7 @@ use cadcraft_ui_egui::menus::{self, Entry};
 use cadcraft_ui_egui::{CadApp, Services};
 use egui::{Rect, Shape, vec2};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 
 #[path = "support/temp_dir.rs"]
 mod temp_dir;
