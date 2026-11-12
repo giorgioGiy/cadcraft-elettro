@@ -43,7 +43,7 @@ const MAX_EDITOR_CHOICES: usize = 20_000;
 static TEMP_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Loose entities used only for a library thumbnail. Attribute definitions normally stay hidden
-/// so a symbol is not covered by prompts and tags; Eplus' `NOTEC` is the exception because its
+/// so a symbol is not covered by prompts and tags; `NOTEC` is the exception because its
 /// default value is part of the symbol's readable identity (`EDP`, `TV`, `10 A`, ...). Convert it
 /// to ordinary text in the temporary preview without changing the source drawing or block.
 fn preview_entities(drawing: &Drawing) -> Vec<Entity> {
@@ -1342,7 +1342,7 @@ fn insert(app: &mut CadApp, symbol: &Symbol) -> Result<(), String> {
     let state = app.session.state().map_err(|error| error.to_string())?;
     let entities_before =
         state.doc.space(&space).map(|entities| entities.len()).ok_or_else(|| "No drawing is available for symbol insertion.".to_string())?;
-    // Eplus-compatible model-space sheets store their paper-to-model factor in DIMSCALE:
+    // Legacy-compatible model-space sheets store their paper-to-model factor in DIMSCALE:
     // 1:50 m = 0.05, 1:100 m = 0.1, 1:200 m = 0.2. Drawings without a usable value stay 1:1.
     let scale = state.doc.header.f64("DIMSCALE", 1.0);
     let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
@@ -1740,7 +1740,7 @@ fn symbol_editor(app: &mut CadApp, ctx: &egui::Context) {
                 ui.end_row();
             });
             ui.label(RichText::new("Sezione: valori del catalogo. Layer elettrico: valori della libreria e del disegno aperto.").small());
-            ui.label(RichText::new("I dati vengono salvati nel catalogo personale; la libreria Eplus originale resta invariata.").small());
+            ui.label(RichText::new("I dati vengono salvati nel catalogo personale; la libreria originale importata resta invariata.").small());
             ui.horizontal(|ui| {
                 save = ui.button("Salva").clicked();
                 cancel = ui.button("Annulla").clicked();
@@ -2500,7 +2500,7 @@ mod tests {
     }
 
     #[test]
-    fn adjacent_xlsx_catalog_adds_eplus_description_category_family_and_layer() {
+    fn adjacent_xlsx_catalog_adds_imported_description_category_family_and_layer() {
         let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
         let folder = std::env::temp_dir().join(format!("cadcraft-symbol-catalog-{}-{id}", std::process::id()));
         assert!(std::fs::create_dir(&folder).is_ok());

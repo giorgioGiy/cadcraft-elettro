@@ -58,13 +58,13 @@ fn script_insert_reads_x_and_y_scale_then_rotation_and_honours_its_options() {
 fn interactive_insert_preserves_repeated_attribute_tags_by_position() {
     let mut s = Session::new();
     for (default, y) in [("prima", 0), ("seconda", 1), ("terza", 2)] {
-        s.execute("attdef", &json!({ "tag": "NCUT", "prompt": "Tag Eplus ripetuto", "default": default, "at": [0, y] })).unwrap();
+        s.execute("attdef", &json!({ "tag": "NCUT", "prompt": "Tag elettrico ripetuto", "default": default, "at": [0, y] })).unwrap();
     }
     let handles: Vec<String> = s.doc().unwrap().model.handles().iter().map(|handle| handle.hex()).collect();
     s.execute("block", &json!({ "name": "CC4", "base": [0, 0], "keep": "delete", "handles": handles })).unwrap();
 
     s.script("-INSERT CC4 10,20 1 1 0\nuno\ndue\ntre\n").unwrap();
-    assert!(s.running.is_none(), "INSERT with duplicate Eplus tags must finish: {}", s.prompt_text());
+    assert!(s.running.is_none(), "INSERT with duplicate electrical tags must finish: {}", s.prompt_text());
     let values = s
         .doc()
         .unwrap()

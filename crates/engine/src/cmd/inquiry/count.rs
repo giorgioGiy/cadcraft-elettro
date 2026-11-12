@@ -463,7 +463,7 @@ const LEGEND_DATA_HEIGHT_EM: f64 = 2.0;
 struct LegendRow {
     block: String,
     description: String,
-    /// `NOTEC` is the Eplus per-reference label (for example `10 A`, `EDP` or `TV`). Keep it in
+    /// `NOTEC` is a per-reference electrical label (for example `10 A`, `EDP` or `TV`). Keep it in
     /// block coordinates so the fitted legend copy can place it with the symbol at any scale.
     notec: Option<Attrib>,
     count: u64,

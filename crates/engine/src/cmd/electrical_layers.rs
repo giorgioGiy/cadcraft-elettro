@@ -331,7 +331,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn eplus_and_floor_names_are_classified() {
+    fn legacy_and_floor_names_are_classified() {
         assert_eq!(group_id("Fm"), Some("power"));
         assert_eq!(group_id("Luce_Sicurezza"), Some("emergency"));
         assert_eq!(group_id("VVF"), Some("fire"));

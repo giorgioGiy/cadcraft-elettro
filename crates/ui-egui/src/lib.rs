@@ -153,7 +153,7 @@ pub struct UiState {
     pub symbol_legend_layer: String,
     pub symbol_legend_quantity: bool,
     pub symbol_legend_scale: f64,
-    /// DXF/DWG drawing used to import the external Eplus-compatible Cart_pl definition.
+    /// DXF/DWG drawing used to import an external Cart_pl definition.
     pub planimetry_title_block_source: String,
     /// The folder the Command Aliases dialog last imported a `.pgp` file from.
     pub last_pgp_dir: Option<String>,

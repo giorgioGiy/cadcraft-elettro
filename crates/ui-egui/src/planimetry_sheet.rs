@@ -1,4 +1,4 @@
-//! Graphical setup for Eplus-compatible electrical plan sheets.
+//! Graphical setup for legacy-compatible electrical plan sheets.
 
 use cadcraft_doc::Handle;
 use cadcraft_engine::Input;
@@ -191,7 +191,7 @@ pub fn dialog(app: &mut CadApp, ctx: &egui::Context, open: &mut bool) {
                 ui.strong("Impostazione del foglio");
                 ui.horizontal(|ui| {
                     ui.radio_value(&mut state.standard_profile, true, "UNI/ISO");
-                    ui.radio_value(&mut state.standard_profile, false, "Compatibilità Eplus");
+                    ui.radio_value(&mut state.standard_profile, false, "Profilo compatibilità");
                 });
                 if state.standard_profile {
                     ui.checkbox(&mut state.sheet_marks, "Segni di rifilatura e centratura");
@@ -200,7 +200,7 @@ pub fn dialog(app: &mut CadApp, ctx: &egui::Context, open: &mut bool) {
                     });
                     ui.small("Margine di archiviazione 20 mm a sinistra; 10 mm sugli altri lati. Il formato A4 resta verticale.");
                 } else {
-                    ui.small("Mantiene la doppia cornice Eplus da 5 e 10 mm.");
+                    ui.small("Mantiene la doppia cornice tradizionale da 5 e 10 mm.");
                 }
             });
             if state.standard_profile && state.paper == "A4" {
@@ -289,7 +289,7 @@ pub fn dialog(app: &mut CadApp, ctx: &egui::Context, open: &mut bool) {
                 ui.strong("Cartiglio");
                 ui.horizontal(|ui| {
                     ui.radio_value(&mut state.native_title_block, true, "CADCraft ISO 7200");
-                    ui.radio_value(&mut state.native_title_block, false, "Cart_pl Eplus");
+                    ui.radio_value(&mut state.native_title_block, false, "Cart_pl esterno");
                 });
                 if state.native_title_block {
                     ui.label("Cartiglio originale incluso: non richiede un disegno sorgente.");

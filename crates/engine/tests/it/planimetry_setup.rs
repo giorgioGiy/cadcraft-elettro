@@ -7,7 +7,7 @@ use cadcraft_geom::Vec2;
 use serde_json::json;
 
 #[test]
-fn a0_one_to_one_hundred_in_metres_matches_eplus_dimensions() {
+fn a0_one_to_one_hundred_in_metres_matches_legacy_dimensions() {
     let mut s = Session::new();
     let value = s.execute("electrical.sheet.setup", &json!({"paper":"A0", "scaleDenominator":100.0, "units":"m", "landscape":true})).unwrap();
     assert_eq!(value["drawingWidth"], json!(118.9));
@@ -89,7 +89,7 @@ fn create_builds_iso_frame_electrical_layers_and_native_title_block() {
 }
 
 #[test]
-fn compatibility_profile_keeps_the_eplus_double_frame() {
+fn compatibility_profile_keeps_the_legacy_double_frame() {
     let mut s = Session::new();
     s.doc_mut().unwrap().blocks.insert("Cart_pl".into(), Arc::new(Block::new("Cart_pl")));
     let value = s
@@ -115,15 +115,15 @@ fn compatibility_profile_keeps_the_eplus_double_frame() {
 }
 
 #[test]
-fn iso_profile_forces_a4_portrait_but_eplus_can_use_landscape() {
+fn iso_profile_forces_a4_portrait_but_legacy_can_use_landscape() {
     let mut iso = Session::new();
     let value = iso
         .execute("electrical.sheet.setup", &json!({"paper":"A4", "scaleDenominator":100.0, "units":"m", "landscape":true, "standardProfile":true}))
         .unwrap();
     assert_eq!((value["drawingWidth"].as_f64(), value["drawingHeight"].as_f64()), (Some(21.0), Some(29.7)));
 
-    let mut eplus = Session::new();
-    let value = eplus
+    let mut legacy = Session::new();
+    let value = legacy
         .execute("electrical.sheet.setup", &json!({"paper":"A4", "scaleDenominator":100.0, "units":"m", "landscape":true, "standardProfile":false}))
         .unwrap();
     assert_eq!((value["drawingWidth"].as_f64(), value["drawingHeight"].as_f64()), (Some(29.7), Some(21.0)));

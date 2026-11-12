@@ -708,7 +708,7 @@ struct InsertM {
     /// Attributes that INSERT asks for: their position among all non-constant ATTDEFs, tag,
     /// prompt, default value, and Verify flag.
     attdefs: Vec<(usize, String, String, String, bool)>,
-    /// Values in prompt order. Original ATTDEF positions keep repeated Eplus tags distinct.
+    /// Values in prompt order. Original ATTDEF positions keep repeated legacy tags distinct.
     values: Vec<String>,
     /// Verify attributes asked again so far.
     verified: usize,

@@ -108,7 +108,7 @@ fn setup(s: &mut Session, p: &Value) -> Result<Value> {
     let (insunits, unit_mm, units) = unit(unit_name).ok_or_else(|| bad(CMD, "`units` deve essere m, cm o mm"))?;
     let standard_profile = bool_or(p, "standardProfile", true);
     // ISO 5457 uses A4 in the upright arrangement.  Compatibility mode keeps the
-    // historical Eplus freedom to create an A4 landscape sheet.
+    // historical freedom of legacy drawings to create an A4 landscape sheet.
     let landscape = if standard_profile && paper.name == "A4" { false } else { bool_or(p, "landscape", true) };
     let automatic_symbol_scale = denominator / unit_mm;
     let symbol_scale = p.get("symbolScale").and_then(Value::as_f64).unwrap_or(automatic_symbol_scale);
@@ -123,12 +123,12 @@ fn setup(s: &mut Session, p: &Value) -> Result<Value> {
     }
 
     let d = s.doc_mut()?;
-    // Standard DXF/DWG values. Eplus drawings use DIMSCALE as the insertion factor for their
+    // Standard DXF/DWG values. Legacy electrical drawings use DIMSCALE as the insertion factor for their
     // electrical symbols, so the result needs no private CADCraft metadata.
     d.header.set_i64("MEASUREMENT", 1);
     d.header.set_i64("INSUNITS", insunits);
     d.header.set_f64("DIMSCALE", symbol_scale);
-    // The two Eplus reference drawings use 300 times the symbol factor for line types:
+    // The two legacy reference drawings use 300 times the symbol factor for line types:
     // 1:100 in metres -> symbols 0.1, LTSCALE 30; 1:1 in millimetres -> 1 and 300.
     let ltscale = (symbol_scale * 300.0).clamp(1e-9, 1_000_000_000.0);
     d.header.set_f64("LTSCALE", ltscale);
