@@ -76,6 +76,31 @@ pub fn title_and_toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
     let tb_h = if app.ui.show_toolbar { 34.0 } else { 0.0 };
     egui::Panel::top("cc_title_toolbar").exact_size(title_h + tb_h).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
         let r = ui.max_rect();
+        let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+        let version_galley = ui.painter().layout_no_wrap(version.clone(), crate::theme::small(), t.text_dim);
+        let version_width = version_galley.size().x + 16.0;
+        let version_row = if title_h > 0.0 {
+            Some(Rect::from_min_size(r.min, vec2(r.width(), title_h)))
+        } else if tb_h > 0.0 {
+            Some(Rect::from_min_size(pos2(r.left(), r.top() + title_h), vec2(r.width(), tb_h)))
+        } else {
+            None
+        };
+        let version_rect = version_row.map(|row| {
+            let rect = Rect::from_min_size(pos2(row.right() - version_width - 8.0, row.center().y - 11.0), vec2(version_width, 22.0));
+            let response = ui.interact(rect, ui.scope_id().with("current_version"), Sense::hover());
+            ui.painter().rect_filled(rect, 3.0, t.chrome_dark);
+            ui.painter().galley(
+                pos2(rect.center().x - version_galley.size().x / 2.0, rect.center().y - version_galley.size().y / 2.0),
+                version_galley,
+                t.text_dim,
+            );
+            let version_label = crate::tf!("Version {version}", version = env!("CARGO_PKG_VERSION"));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, response.enabled(), version_label.clone()));
+            crate::control::record_widget(ui, &response, &version_label, "label", None);
+            response.on_hover_text(version_label);
+            rect
+        });
         if title_h > 0.0 {
             // The empty row moves the window; it goes first so later widgets take their own clicks.
             craft_window::title_bar::empty_area(ui, Rect::from_min_size(r.min, vec2(r.width(), title_h)));
@@ -87,7 +112,12 @@ pub fn title_and_toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
             // the capitals' middle is the text box's middle, so no optical nudge.
             let galley = ui.painter().layout_no_wrap(title, egui::FontId::proportional(13.0), t.text_dim);
             let x = title_left(r.left(), r.width(), galley.size().x);
-            ui.painter().galley(pos2(x, r.top() + (title_h - galley.size().y) / 2.0), galley, t.text_dim);
+            let clip_right = version_rect.map_or(r.right(), |rect| rect.left() - 6.0);
+            ui.painter().with_clip_rect(Rect::from_min_max(r.min, pos2(clip_right.max(r.left()), r.top() + title_h))).galley(
+                pos2(x, r.top() + (title_h - galley.size().y) / 2.0),
+                galley,
+                t.text_dim,
+            );
         }
         if tb_h > 0.0 {
             let row = Rect::from_min_size(pos2(r.left(), r.top() + title_h), vec2(r.width(), tb_h));
@@ -96,10 +126,12 @@ pub fn title_and_toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
             let mut clicked = None;
             let mac = ui.ctx().os().is_mac();
             let widths: Vec<_> = TOOLBAR.iter().map(|group| group.len() as f32 * (size + 6.0) - 6.0).collect();
-            let available = (row.right() - 12.0 - x).max(0.0);
+            let toolbar_right = if title_h == 0.0 { version_rect.map_or(row.right() - 12.0, |rect| rect.left() - 6.0) } else { row.right() - 12.0 };
+            let available = (toolbar_right - x).max(0.0);
             let Some(fit) = craft_ui::layout::fit_toolbar(&widths, available, 24.0, 30.0) else {
                 // Very small windows still expose the complete command row by scrolling.
-                ui.scope_builder(egui::UiBuilder::new().max_rect(row.shrink2(vec2(4.0, 0.0))), |ui| {
+                let small = Rect::from_min_max(row.min + vec2(4.0, 0.0), pos2(toolbar_right, row.bottom()));
+                ui.scope_builder(egui::UiBuilder::new().max_rect(small), |ui| {
                     egui::ScrollArea::horizontal().id_salt("toolbar_small").show(ui, |ui| {
                         ui.horizontal(|ui| {
                             for group in TOOLBAR {
@@ -553,11 +585,17 @@ pub fn start_page(app: &mut CadApp, ui: &mut egui::Ui) {
     );
     let mut y = left.top() + 140.0;
     let mut action = None;
-    for (label, cmd) in [("Open...", "open"), ("New", "new"), ("New (metric)", "new.metric"), ("Open sample drawing", "sample")] {
+    #[cfg(not(target_arch = "wasm32"))]
+    let buttons =
+        [("Open...", "open"), ("New", "new"), ("New (metric)", "new.metric"), ("Open sample drawing", "sample"), ("Check for Updates…", "updates")];
+    #[cfg(target_arch = "wasm32")]
+    let buttons = [("Open...", "open"), ("New", "new"), ("New (metric)", "new.metric"), ("Open sample drawing", "sample")];
+    for (label, cmd) in buttons {
         let br = Rect::from_min_size(pos2(left.left() + 34.0, y), vec2(220.0, 34.0));
         let resp = ui.interact(br, ui.scope_id().with(("start", cmd)), Sense::click());
         p.rect_stroke(br, 2.0, Stroke::new(1.0, if resp.hovered() { t.text } else { t.text_dim }), egui::StrokeKind::Inside);
         p.text(pos2(br.left() + 16.0, br.center().y), egui::Align2::LEFT_CENTER, crate::i18n::t(label), crate::theme::body(), t.text);
+        icons::describe_control(ui, &resp, label, None, false);
         if resp.clicked() {
             action = Some(cmd);
         }
@@ -613,6 +651,8 @@ pub fn start_page(app: &mut CadApp, ui: &mut egui::Ui) {
         Some("sample") => {
             app.start("ui.sample");
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        Some("updates") => crate::updates_ui::check_now(app),
         _ => {}
     }
 }

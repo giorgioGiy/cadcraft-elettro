@@ -111,6 +111,9 @@ fn start_page_lists_recent_files_and_opens_one_on_click() {
         app,
     );
     h.run_steps(3);
+    h.get_by_label("Check for Updates…");
+    let current_version = format!("Version {}", env!("CARGO_PKG_VERSION"));
+    h.get_by_label(current_version.as_str());
     let mut found = Vec::new();
     for s in &h.output().shapes {
         texts(&s.shape, &mut found);
