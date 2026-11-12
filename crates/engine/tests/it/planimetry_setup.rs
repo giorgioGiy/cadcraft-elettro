@@ -79,8 +79,8 @@ fn create_builds_iso_frame_electrical_layers_and_native_title_block() {
     assert!(title.1.attribs.iter().any(|attribute| attribute.tag == "SCALA" && attribute.text.value == "1:100"));
     assert!(title.1.attribs.iter().any(|attribute| attribute.tag == "FORMATO" && attribute.text.value == "A3"));
     assert!(title.1.attribs.iter().any(|attribute| attribute.tag == "TITOLO" && attribute.text.value == "Schema d'installazione impianto elettrico"));
-    assert!(title.1.attribs.iter().any(|attribute| attribute.tag == "CREATO_DA" && attribute.text.value == "Dott. Giorgio Sardei"));
-    assert!(title.1.attribs.iter().any(|attribute| attribute.tag == "ID_DOCUMENTO" && attribute.text.value == "Sardei01"));
+    assert!(title.1.attribs.iter().any(|attribute| attribute.tag == "CREATO_DA" && attribute.text.value.is_empty()));
+    assert!(title.1.attribs.iter().any(|attribute| attribute.tag == "ID_DOCUMENTO" && attribute.text.value == "DOC-001"));
     assert!(title.1.attribs.iter().any(|attribute| attribute.tag == "TIPO_DOCUMENTO" && attribute.text.value == "Esecutivo"));
     assert!(title.1.attribs.iter().any(|attribute| attribute.tag == "REVISIONE" && attribute.text.value == "0"));
     assert!(title.1.attribs.iter().any(|attribute| attribute.tag == "APPROVATO" && attribute.text.value.is_empty()));

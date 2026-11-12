@@ -14,8 +14,8 @@ const CREATE_CMD: &str = "electrical.sheet.create";
 const VALIDATE_CMD: &str = "electrical.titleblock.validate";
 const ISO_SHEET_LAYER: &str = "SQUADRATURA_ISO";
 const NATIVE_TITLE_BLOCK: &str = "CADCRAFT_ISO7200";
-const DEFAULT_DESIGNER: &str = "Dott. Giorgio Sardei";
-const DEFAULT_DOCUMENT_ID: &str = "Sardei01";
+const DEFAULT_DESIGNER: &str = "";
+const DEFAULT_DOCUMENT_ID: &str = "DOC-001";
 const DEFAULT_DOCUMENT_TYPE: &str = "Esecutivo";
 const DEFAULT_DOCUMENT_TITLE: &str = "Schema d'installazione impianto elettrico";
 
@@ -471,9 +471,9 @@ fn create(s: &mut Session, p: &Value) -> Result<Value> {
             Some(values) => super::blocks::insert_with_ordered(s, &title, at, scale, 0.0, None, values),
             None if native_title => {
                 let mut values = serde_json::Map::new();
-                // Personal base profile recovered from Giorgio's Cart_pl. Client, project,
-                // addresses, issue date and approval remain deliberately blank because they
-                // belong to the individual job and must not be copied from an older drawing.
+                // Neutral defaults keep the native title block reusable. Client, project,
+                // designer, issue date and approval belong to the individual job and remain
+                // blank until the user fills them in.
                 values.insert("TITOLO".into(), json!(DEFAULT_DOCUMENT_TITLE));
                 values.insert("PROPRIETARIO".into(), json!(DEFAULT_DESIGNER));
                 values.insert("ID_DOCUMENTO".into(), json!(DEFAULT_DOCUMENT_ID));

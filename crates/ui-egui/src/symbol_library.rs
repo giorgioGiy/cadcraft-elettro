@@ -244,15 +244,11 @@ impl State {
         {
             let bundled = std::env::current_exe()
                 .ok()
-                .and_then(|path| path.parent().map(|parent| parent.join("Librerie").join("Studio_Sardei.zip")))
-                .or_else(|| std::env::current_dir().ok().map(|path| path.join("Librerie").join("Studio_Sardei.zip")));
+                .and_then(|path| path.parent().map(|parent| parent.join("Librerie").join("Libreria_CADCraft_Elettro.zip")))
+                .or_else(|| std::env::current_dir().ok().map(|path| path.join("Librerie").join("Libreria_CADCraft_Elettro.zip")));
             if let Some(path) = bundled.filter(|path| path.is_file()) {
                 self.load(path);
                 return;
-            }
-            let legacy = Path::new(r"E:\00cad\Studio_Sardei.zip");
-            if legacy.is_file() {
-                self.load(legacy);
             }
         }
     }
@@ -626,7 +622,7 @@ fn merge_user_library(archive: &Path, symbols: &mut Vec<Symbol>, user: &UserLibr
             Ok(metadata) if metadata.is_file() && metadata.len() <= MAX_SYMBOL_BYTES => metadata,
             _ => {
                 // A portable library may keep the personal drawing inside the ZIP's opt-in
-                // `Personale/` folder.  The archive index already created its Symbol; use the
+                // `libPersonale/` folder.  The archive index already created its Symbol; use the
                 // sidecar's saved catalogue data without looking for a duplicate loose file.
                 if let Some(symbol) = symbols.iter_mut().find(|symbol| symbol.code.eq_ignore_ascii_case(&personal.code)) {
                     symbol.description.clone_from(&personal.description);
@@ -695,7 +691,7 @@ fn index_archive(path: &Path) -> Result<Vec<Symbol>, String> {
             file: None,
         });
     }
-    // An opt-in `Personale/` entry intentionally overrides a base-library entry with the same
+    // An opt-in `libPersonale/` entry intentionally overrides a base-library entry with the same
     // code. Keep it first before case-insensitive de-duplication.
     symbols.sort_by_key(|symbol| (symbol.code.to_ascii_lowercase(), !personal_archive_entry(&symbol.entry)));
     symbols.dedup_by(|left, right| left.code.eq_ignore_ascii_case(&right.code));
@@ -1042,7 +1038,7 @@ fn unique_personal_path(folder: &Path, code: &str) -> Result<PathBuf, String> {
 }
 
 fn personal_archive_entry(name: &str) -> bool {
-    name.replace('\\', "/").to_ascii_lowercase().starts_with("personale/")
+    name.replace('\\', "/").to_ascii_lowercase().starts_with("libpersonale/")
 }
 
 fn archive_uses_personal_folder(path: &Path) -> Result<bool, String> {
@@ -1058,7 +1054,7 @@ fn archive_uses_personal_folder(path: &Path) -> Result<bool, String> {
     Ok(false)
 }
 
-/// Atomically add or replace one drawing under an opted-in ZIP's `Personale/` folder. Existing
+/// Atomically add or replace one drawing under an opted-in ZIP's `libPersonale/` folder. Existing
 /// entries are copied in compressed form and the first pre-update archive is retained as a
 /// recovery copy. The live archive is restored if the final rename fails.
 fn write_personal_archive_symbol(archive_path: &Path, code: &str, bytes: &[u8]) -> Result<String, String> {
@@ -1066,7 +1062,7 @@ fn write_personal_archive_symbol(archive_path: &Path, code: &str, bytes: &[u8]) 
         return Err("Il simbolo esportato supera il limite di 32 MB.".into());
     }
     let parent = archive_path.parent().ok_or_else(|| format!("{} non ha una cartella valida.", archive_path.display()))?;
-    let entry_name = format!("Personale/{}.dxf", safe_file_stem(code));
+    let entry_name = format!("libPersonale/{}.dxf", safe_file_stem(code));
     let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
     let temp = parent.join(format!(".cadcraft-library-{}-{id}.tmp", std::process::id()));
     let input = File::open(archive_path).map_err(|error| format!("{}: {error}", archive_path.display()))?;
@@ -2122,8 +2118,8 @@ mod tests {
             let mut archive = zip::ZipWriter::new(file);
             archive.start_file("OLD.dwg", SimpleFileOptions::default()).map_err(|error| error.to_string())?;
             archive.write_all(b"base old").map_err(|error| error.to_string())?;
-            archive.add_directory("Personale/", SimpleFileOptions::default()).map_err(|error| error.to_string())?;
-            archive.start_file("Personale/OLD.dxf", SimpleFileOptions::default()).map_err(|error| error.to_string())?;
+            archive.add_directory("libPersonale/", SimpleFileOptions::default()).map_err(|error| error.to_string())?;
+            archive.start_file("libPersonale/OLD.dxf", SimpleFileOptions::default()).map_err(|error| error.to_string())?;
             archive.write_all(b"previous personal").map_err(|error| error.to_string())?;
             archive.start_file("KEEP.dxf", SimpleFileOptions::default()).map_err(|error| error.to_string())?;
             archive.write_all(b"keep me").map_err(|error| error.to_string())?;
@@ -2133,7 +2129,7 @@ mod tests {
         assert!(archive_result.is_ok(), "{archive_result:?}");
         assert_eq!(archive_uses_personal_folder(&library), Ok(true));
         let updated = write_personal_archive_symbol(&library, "OLD", b"new personal drawing");
-        assert_eq!(updated.as_deref(), Ok("Personale/OLD.dxf"));
+        assert_eq!(updated.as_deref(), Ok("libPersonale/OLD.dxf"));
         assert!(folder.join("Library.zip.cadcraft-original.zip").is_file());
 
         let file = File::open(&library);
@@ -2145,7 +2141,7 @@ mod tests {
                 .filter(|name| personal_archive_entry(name) && symbol_code(name).as_deref() == Some("OLD"))
                 .count();
             assert_eq!(old_entries, 1);
-            let mut personal = archive.by_name("Personale/OLD.dxf").unwrap();
+            let mut personal = archive.by_name("libPersonale/OLD.dxf").unwrap();
             let mut bytes = Vec::new();
             assert!(personal.read_to_end(&mut bytes).is_ok());
             assert_eq!(bytes, b"new personal drawing");
@@ -2154,7 +2150,7 @@ mod tests {
         let mut user = UserLibrary { version: 1, ..UserLibrary::default() };
         user.symbols.push(UserSymbol {
             code: "OLD".into(),
-            file: "Personale/OLD.dxf".into(),
+            file: "libPersonale/OLD.dxf".into(),
             description: "Descrizione personale".into(),
             category: "6 Impiantistica".into(),
             family: "Prova".into(),
@@ -2164,7 +2160,7 @@ mod tests {
         let mut state = State::default();
         state.load(&library);
         let personal = state.symbols.iter().find(|symbol| symbol.code == "OLD");
-        assert_eq!(personal.map(|symbol| symbol.entry.as_str()), Some("Personale/OLD.dxf"));
+        assert_eq!(personal.map(|symbol| symbol.entry.as_str()), Some("libPersonale/OLD.dxf"));
         assert_eq!(personal.map(|symbol| symbol.description.as_str()), Some("Descrizione personale"));
         assert_eq!(personal.map(|symbol| symbol.category.as_str()), Some("6 Impiantistica"));
         assert_eq!(personal.map(|symbol| symbol.layer.as_str()), Some("FM"));
@@ -2421,7 +2417,7 @@ mod tests {
             let mut archive = zip::ZipWriter::new(file);
             archive.start_file("BASE.dxf", SimpleFileOptions::default()).map_err(|error| error.to_string())?;
             archive.write_all(b"synthetic base symbol").map_err(|error| error.to_string())?;
-            archive.add_directory("Personale/", SimpleFileOptions::default()).map_err(|error| error.to_string())?;
+            archive.add_directory("libPersonale/", SimpleFileOptions::default()).map_err(|error| error.to_string())?;
             archive.finish().map_err(|error| error.to_string())?;
             Ok(())
         })();
@@ -2445,7 +2441,7 @@ mod tests {
         }
         let symbol = app.symbol_library.symbols.iter().find(|symbol| symbol.code == "PRESA_TEST");
         assert!(symbol.is_some());
-        assert_eq!(symbol.map(|symbol| symbol.entry.as_str()), Some("Personale/PRESA_TEST.dxf"));
+        assert_eq!(symbol.map(|symbol| symbol.entry.as_str()), Some("libPersonale/PRESA_TEST.dxf"));
         assert!(symbol.is_some_and(|symbol| symbol.file.is_none()));
         assert!(folder.join("Library.zip.cadcraft-original.zip").is_file());
         let bytes = symbol.map(|symbol| read_entry(&library, symbol));
@@ -2507,12 +2503,12 @@ mod tests {
         let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
         let folder = std::env::temp_dir().join(format!("cadcraft-symbol-catalog-{}-{id}", std::process::id()));
         assert!(std::fs::create_dir(&folder).is_ok());
-        let library = folder.join("Studio_Sardei.zip");
+        let library = folder.join("Libreria_CADCraft_Elettro.zip");
         let catalog = folder.join("Catalogo_simboli_CadCraft.xlsx");
         let result: Result<(), String> = (|| {
             let file = OpenOptions::new().write(true).create_new(true).open(&library).map_err(|error| error.to_string())?;
             let mut archive = zip::ZipWriter::new(file);
-            archive.start_file("Lib4_CA_CB_CC_CD/CA6.dwg", SimpleFileOptions::default()).map_err(|error| error.to_string())?;
+            archive.start_file("libElettro02/CA6.dwg", SimpleFileOptions::default()).map_err(|error| error.to_string())?;
             archive.write_all(b"synthetic drawing fixture").map_err(|error| error.to_string())?;
             archive.finish().map_err(|error| error.to_string())?;
             test_catalog(&catalog)?;

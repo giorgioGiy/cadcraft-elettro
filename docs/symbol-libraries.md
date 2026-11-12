@@ -9,6 +9,10 @@ ZIP folders are allowed. The drawing file's stem becomes the symbol code: for ex
 `planimetria/PRESA.DWG` appears as `PRESA`. Non-DXF/DWG entries are ignored. If the same code
 appears more than once, only the first indexed entry is shown.
 
+The portable electrical package uses `Libreria_CADCraft_Elettro.zip` with the neutral internal
+folders `libElettro01`, `libElettro02` and `libPersonale`. New symbols captured from the open
+drawing are written to `libPersonale`; the individual DWG/DXF file names remain unchanged.
+
 The selected ZIP path is kept in the user preferences and reopened at the next start. A script or
 the control channel can load a catalog without opening a file picker:
 
