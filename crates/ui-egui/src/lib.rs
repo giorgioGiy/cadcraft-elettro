@@ -8,13 +8,17 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
-/// CADCraft as craft-update knows it, with its 128 px icon and accent colour: the update
+/// CADCraft Elettro as craft-update knows it, with its 128 px icon and accent colour: the update
 /// prompt shows both, and an AppImage's menu entry gets the icon.
+///
+/// Keep the `cadcraft` machine id because release assets and installed executables use that stem,
+/// but check the electrical fork's releases. Pointing this at the upstream repository would offer
+/// a stock CADCraft build and remove the electrical extensions during an in-app update.
 #[cfg(not(target_arch = "wasm32"))]
 pub const UPDATE_APP: craft_update::app::App = craft_update::app::App {
     icon_png: Some(include_bytes!("../../../assets/app-icon/hicolor/128x128/apps/ai.storyteller.cadcraft.png")),
     accent: Some([0x3e, 0xa6, 0xe8]),
-    ..craft_update::suite::CADCRAFT
+    ..craft_update::app::App::new("cadcraft", "CADCraft Elettro", "Electrical CAD design and drafting", "giorgioGiy/cadcraft-elettro")
 };
 
 pub mod aliasdlg;

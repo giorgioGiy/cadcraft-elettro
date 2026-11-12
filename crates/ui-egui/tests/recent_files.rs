@@ -139,6 +139,14 @@ fn start_page_lists_recent_files_and_opens_one_on_click() {
     assert_eq!(app.ui.recent_files, [plan, section]);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn electrical_updates_only_use_the_electrical_fork() {
+    assert_eq!(cadcraft_ui_egui::UPDATE_APP.id, "cadcraft");
+    assert_eq!(cadcraft_ui_egui::UPDATE_APP.name, "CADCraft Elettro");
+    assert_eq!(cadcraft_ui_egui::UPDATE_APP.repo, "giorgioGiy/cadcraft-elettro");
+}
+
 #[test]
 fn a_recent_file_that_no_longer_exists_is_dropped_when_opening_it_fails() {
     let (_dir, plan, _section) = drawings("missing");
