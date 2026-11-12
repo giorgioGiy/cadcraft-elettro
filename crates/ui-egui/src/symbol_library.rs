@@ -1038,7 +1038,8 @@ fn unique_personal_path(folder: &Path, code: &str) -> Result<PathBuf, String> {
 }
 
 fn personal_archive_entry(name: &str) -> bool {
-    name.replace('\\', "/").to_ascii_lowercase().starts_with("libpersonale/")
+    let normalized = name.replace('\\', "/").to_ascii_lowercase();
+    normalized.starts_with("libpersonale/") || normalized.starts_with("personale/")
 }
 
 fn archive_uses_personal_folder(path: &Path) -> Result<bool, String> {
