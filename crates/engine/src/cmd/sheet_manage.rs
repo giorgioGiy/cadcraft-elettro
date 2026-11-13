@@ -168,20 +168,19 @@ fn list(s: &mut Session, p: &Value) -> Result<Value> {
                 blocks.insert(insert.block.clone());
             }
         }
-        if let EntityKind::Insert(i) = &e.kind {
-            if title_matches(d, i, block(p))
-                && let Some(page) = title_page(d, e, i)
-                && let Some((_, blocks, title_blocks, values)) = grouped.get_mut(&page)
-            {
-                if i.attribs.len() > 4096 || i.attribs.iter().any(|a| a.text.value.len() > 65_536) {
-                    return Err(bad("sheet.list", "Cartiglio troppo grande per il gestore pagine"));
-                }
-                blocks.insert(i.block.clone());
-                title_blocks.insert(i.block.clone());
-                for a in &i.attribs {
-                    if let Some(key) = title_key(&i.block, &a.tag) {
-                        values.insert(key.into(), a.text.value.clone());
-                    }
+        if let EntityKind::Insert(i) = &e.kind
+            && title_matches(d, i, block(p))
+            && let Some(page) = title_page(d, e, i)
+            && let Some((_, blocks, title_blocks, values)) = grouped.get_mut(&page)
+        {
+            if i.attribs.len() > 4096 || i.attribs.iter().any(|a| a.text.value.len() > 65_536) {
+                return Err(bad("sheet.list", "Cartiglio troppo grande per il gestore pagine"));
+            }
+            blocks.insert(i.block.clone());
+            title_blocks.insert(i.block.clone());
+            for a in &i.attribs {
+                if let Some(key) = title_key(&i.block, &a.tag) {
+                    values.insert(key.into(), a.text.value.clone());
                 }
             }
         }
