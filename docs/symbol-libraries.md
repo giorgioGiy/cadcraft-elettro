@@ -25,6 +25,12 @@ reads that single entry, defines it as a normal block, and removes the temporary
 entries are never extracted using their stored paths. Archives are capped at 10,000 entries and
 each expanded drawing at 32 MiB.
 
+For model-space unifilar drawings, canonical positive-integer layer names (`1`, `2`, `3`, ...)
+represent sheets. If one of those layers is current, a library block reference is placed on that
+active sheet layer, regardless of the planimetry layer stored in the catalog. In other drawings,
+including planimetries, the catalog layer remains the insertion layer. Names with leading zeroes
+such as `01` are not treated as sheets.
+
 ## Licensing
 
 Only use symbol files that you are permitted to use and redistribute. Proprietary catalogs can

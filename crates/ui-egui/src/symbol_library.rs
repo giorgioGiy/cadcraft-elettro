@@ -1350,6 +1350,17 @@ fn hide_symbol(app: &mut CadApp, code: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Model-space unifilar drawings use canonical positive-integer layers as sheets.  When one of
+/// those sheets is current, the block reference must follow the active sheet instead of the
+/// catalog's planimetry layer; otherwise changing page would leave the newly inserted symbol on a
+/// different sheet.  Names such as `01` are deliberately not pages, consistently with the sheet
+/// navigation and management commands.
+fn active_sheet_layer(drawing: &Drawing) -> Option<String> {
+    let current = drawing.header.str("CLAYER", "0");
+    let number = current.parse::<u64>().ok()?;
+    (number > 0 && number.to_string() == current && drawing.layer(&current).is_some()).then_some(current)
+}
+
 fn insert(app: &mut CadApp, symbol: &Symbol) -> Result<(), String> {
     let space = app.session.space();
     let state = app.session.state().map_err(|error| error.to_string())?;
@@ -1359,13 +1370,14 @@ fn insert(app: &mut CadApp, symbol: &Symbol) -> Result<(), String> {
     // 1:50 m = 0.05, 1:100 m = 0.1, 1:200 m = 0.2. Drawings without a usable value stay 1:1.
     let scale = state.doc.header.f64("DIMSCALE", 1.0);
     let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+    let target_layer = active_sheet_layer(&state.doc).unwrap_or_else(|| symbol.layer.trim().to_string());
     let pending = PendingInsert {
         uid: state.uid,
         space,
         entities_before,
         block: symbol.code.clone(),
         description: symbol.description.clone(),
-        layer: symbol.layer.trim().to_string(),
+        layer: target_layer,
     };
     if app.session.doc().is_ok_and(|drawing| drawing.block(&symbol.code).is_some()) {
         app.start("insert");
@@ -2542,6 +2554,39 @@ mod tests {
         let _ = std::fs::remove_file(catalog);
         let _ = std::fs::remove_file(library);
         let _ = std::fs::remove_dir(folder);
+    }
+
+    #[test]
+    fn library_insert_uses_the_active_numeric_sheet_instead_of_the_catalog_layer() {
+        let mut app = CadApp::new(Session::new(), Services::default());
+        assert!(app.run("line", json!({"points":[[0,0],[1,0]]})).is_ok());
+        let handles: Vec<_> = app.session.doc().map(|drawing| drawing.model.iter().map(|entity| entity.handle.hex()).collect()).unwrap_or_default();
+        assert!(app.run("block", json!({"name": "INTERRUTTORE", "base": [0,0], "handles": handles, "keep": "delete"})).is_ok());
+        assert!(app.run("layer.new", json!({"name": "2"})).is_ok());
+        assert!(app.run("layer.current", json!({"name": "2"})).is_ok());
+        let symbol = Symbol {
+            code: "INTERRUTTORE".into(),
+            entry: "unifilari/INTERRUTTORE.dwg".into(),
+            index: 0,
+            bytes: 0,
+            description: "Interruttore".into(),
+            category: "Schemi unifilari".into(),
+            family: String::new(),
+            layer: "SCHEMA_ELETTRICO".into(),
+            file: None,
+        };
+
+        assert!(insert(&mut app, &symbol).is_ok());
+        assert!(app.session.input(Input::Point(Vec2::new(10.0, 20.0))).is_ok());
+        assert!(app.session.input(Input::Enter).is_ok());
+        tick(&mut app, &egui::Context::default());
+
+        let inserted_layer = app.session.doc().ok().and_then(|drawing| {
+            drawing.model.iter().find_map(|entity| matches!(&entity.kind, EntityKind::Insert(_)).then_some(entity.common.layer.as_str()))
+        });
+        assert_eq!(inserted_layer, Some("2"));
+        assert!(app.session.doc().is_ok_and(|drawing| drawing.layer("SCHEMA_ELETTRICO").is_none()));
+        assert_eq!(app.session.doc().ok().map(|drawing| drawing.header.str("CLAYER", "0")).as_deref(), Some("2"));
     }
 
     #[test]
