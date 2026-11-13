@@ -851,7 +851,7 @@ fn architectural_layer(name: &str) -> bool {
 }
 
 fn title_block(drawing: &Drawing, name: &str) -> bool {
-    if ["att_tav", "Cart_pl", "0UNIA3", "00A3SCHEMI", "CADCRAFT_ISO7200"].iter().any(|known| name.eq_ignore_ascii_case(known)) {
+    if ["att_tav", "Cart_pl", "0UNIA3", "00A3SCHEMI", "CADCRAFT_ISO7200", "SG2018"].iter().any(|known| name.eq_ignore_ascii_case(known)) {
         return true;
     }
     let Some(block) = drawing.block(name) else { return false };
@@ -860,6 +860,19 @@ fn title_block(drawing: &Drawing, name: &str) -> bool {
     };
     let identity = ["TAVOLA", "FOGLIO", "PROGETTO", "COMMITTENTE", "CLIENTE", "DENOMINAZIONE"];
     has("SCALA") && identity.iter().filter(|tag| has(tag)).take(2).count() >= 2
+}
+
+fn title_block_attributes(insert: &cadcraft_doc::Insert) -> bool {
+    if insert.attribs.len() > 4096 {
+        return false;
+    }
+    let has = |wanted: &[&str]| insert.attribs.iter().any(|attribute| wanted.iter().any(|tag| attribute.tag.eq_ignore_ascii_case(tag)));
+    let page = has(&["SHEET", "NUMFOG", "FOGLIO", "TAVOLA"]);
+    let sequence = has(&["SHEETS", "NSHEET", "TOTALE_FOGLI", "NUMFOGSEG"]);
+    let groups = usize::from(has(&["OGGETTO1", "OGGETTO2", "IMPIANTO", "IMPIANTO2", "DESCRIZIONE1", "DESCRIZIONE2"]))
+        + usize::from(has(&["COMUNE", "PROVINCIA", "INDIRIZZO", "CLIENTE", "COMMITTENTE", "PROGETTO"]))
+        + usize::from(has(&["DATA", "DISEG", "DISEGNO", "PROG", "VISTO", "MATRICOLA", "SCALA"]));
+    page && (groups >= 2 || (sequence && groups >= 1))
 }
 
 fn reference_description(drawing: &Drawing, block_name: &str, insert: &cadcraft_doc::Insert) -> String {
@@ -901,7 +914,7 @@ fn begin_import_from_selection(app: &mut CadApp) -> Result<(), String> {
     if insert.block.starts_with('*') {
         return Err("I blocchi anonimi o dinamici generati automaticamente non possono essere aggiunti direttamente alla libreria.".into());
     }
-    if title_block(drawing, &insert.block) {
+    if title_block(drawing, &insert.block) || title_block_attributes(insert) {
         return Err("Il blocco selezionato è un cartiglio o una squadratura e non può essere aggiunto alla libreria elettrica.".into());
     }
     if architectural_layer(&entity.common.layer) {

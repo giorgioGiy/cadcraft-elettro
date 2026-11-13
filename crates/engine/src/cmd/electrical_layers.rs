@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadcraft_doc::{Drawing, EntityKind, Handle, Space};
+use cadcraft_doc::{Drawing, EntityKind, Handle, Insert, Space};
 use cadcraft_geom::{Mat3, Vec2};
 use serde_json::{Value, json};
 
@@ -97,16 +97,51 @@ pub(crate) fn is_electrical_layer(name: &str) -> bool {
     matches!(group_id(name), Some("power" | "lighting" | "emergency" | "fire" | "photovoltaic" | "data" | "intrusion" | "earth" | "distribution"))
 }
 
+fn known_title_block(name: &str) -> bool {
+    ["att_tav", "Cart_pl", "0UNIA3", "00A3SCHEMI", "CADCRAFT_ISO7200", "SG2018"].iter().any(|known| name.eq_ignore_ascii_case(known))
+}
+
+fn title_block_signature<'a>(tags: impl Iterator<Item = &'a str>) -> bool {
+    let mut page = false;
+    let mut sequence = false;
+    let mut description = false;
+    let mut project = false;
+    let mut document = false;
+    for tag in tags.take(4096) {
+        match tag.trim().to_ascii_uppercase().as_str() {
+            "SHEET" | "NUMFOG" | "FOGLIO" | "TAVOLA" => page = true,
+            "SHEETS" | "NSHEET" | "TOTALE_FOGLI" | "NUMFOGSEG" => sequence = true,
+            "OGGETTO1" | "OGGETTO2" | "OGGETTO3" | "IMPIANTO" | "IMPIANTO2" | "DESCRIZIONE1" | "DESCRIZIONE2" | "COMMESSA1" | "COMMESSA2" => {
+                description = true
+            }
+            "COMUNE" | "PROVINCIA" | "INDIRIZZO" | "CLIENTE" | "CLIENTE1" | "COMMITTENTE" | "PROGETTO" | "DENOMINAZIONE" => project = true,
+            "DATA" | "DISEG" | "DISEGNO" | "PROG" | "VISTO" | "REV1" | "REV2" | "REV3" | "MATRICOLA" | "SCALA" => document = true,
+            _ => {}
+        }
+    }
+    let groups = usize::from(description) + usize::from(project) + usize::from(document);
+    page && (groups >= 2 || (sequence && groups >= 1))
+}
+
 pub(crate) fn is_title_block(drawing: &Drawing, name: &str) -> bool {
-    if ["att_tav", "Cart_pl", "0UNIA3", "00A3SCHEMI", "CADCRAFT_ISO7200"].iter().any(|known| name.eq_ignore_ascii_case(known)) {
+    if known_title_block(name) {
         return true;
     }
     let Some(block) = drawing.block(name) else { return false };
+    if title_block_signature(
+        block.entities.iter().filter_map(|entity| if let EntityKind::AttDef(attribute) = &entity.kind { Some(attribute.tag.as_str()) } else { None }),
+    ) {
+        return true;
+    }
     let has = |wanted: &str| {
         block.entities.iter().any(|entity| matches!(&entity.kind, EntityKind::AttDef(attribute) if attribute.tag.eq_ignore_ascii_case(wanted)))
     };
     let identity_fields = ["TAVOLA", "FOGLIO", "PROGETTO", "COMMITTENTE", "CLIENTE", "DENOMINAZIONE"];
     has("SCALA") && identity_fields.iter().filter(|tag| has(tag)).take(2).count() >= 2
+}
+
+pub(crate) fn is_title_block_insert(drawing: &Drawing, insert: &Insert) -> bool {
+    is_title_block(drawing, &insert.block) || title_block_signature(insert.attribs.iter().map(|attribute| attribute.tag.as_str()))
 }
 
 fn floor_id(name: &str) -> Option<&'static str> {

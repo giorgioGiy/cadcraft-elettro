@@ -292,11 +292,11 @@ fn show(app: &mut CadApp, ctx: &egui::Context, open: &mut bool) {
                 let mut changed_block = false;
                 ui.horizontal(|ui| {
                     ui.label("Blocco cartiglio:");
-                    let names: BTreeSet<_> = st.rows.iter().flat_map(|r| r.blocks.iter().cloned()).collect();
+                    let names: BTreeSet<_> = st.rows.iter().flat_map(|r| r.title_blocks.iter().cloned()).collect();
                     craft_ui::ComboBox::from_id_salt("sheet-title-block")
                         .selected_text(if st.title_block == "auto" { "Automatico" } else { &st.title_block })
                         .show_ui(ui, |ui| {
-                            changed_block |= ui.selectable_value(&mut st.title_block, "auto".into(), "Automatico (entrambi i formati)").changed();
+                            changed_block |= ui.selectable_value(&mut st.title_block, "auto".into(), "Automatico (firma degli attributi)").changed();
                             for name in names {
                                 changed_block |= ui.selectable_value(&mut st.title_block, name.clone(), name).changed();
                             }

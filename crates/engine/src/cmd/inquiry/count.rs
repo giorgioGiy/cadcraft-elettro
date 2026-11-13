@@ -557,7 +557,7 @@ fn legend_rows(s: &Session, p: &Value) -> Result<Vec<LegendRow>> {
         }
         let Some(entity) = d.entity(handle) else { continue };
         let EntityKind::Insert(insert) = &entity.kind else { continue };
-        if insert.block.starts_with('*') || super::super::electrical_layers::is_title_block(d, &insert.block) {
+        if insert.block.starts_with('*') || super::super::electrical_layers::is_title_block_insert(d, insert) {
             continue;
         }
         if electrical_only {

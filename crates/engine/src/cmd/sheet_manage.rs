@@ -1,6 +1,6 @@
 //! Model-space sheets on positive integer layers. Edits commit a validated COW copy.
 use super::{CommandSpec, Result, Session, bad, str_param};
-use cadcraft_doc::{Drawing, Entity, EntityKind, EntityStore, Layer, Space};
+use cadcraft_doc::{Drawing, Entity, EntityKind, EntityStore, Insert, Layer, Space};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -20,9 +20,39 @@ fn pages(d: &Drawing) -> Result<Vec<String>> {
 fn block(p: &Value) -> &str {
     str_param(p, "block").unwrap_or("auto")
 }
-fn title_matches(name: &str, choice: &str) -> bool {
-    name.eq_ignore_ascii_case(choice)
-        || (choice.eq_ignore_ascii_case("auto") && ["att_tav", "0UNIA3", "00A3SCHEMI"].iter().any(|known| name.eq_ignore_ascii_case(known)))
+fn title_matches(drawing: &Drawing, insert: &Insert, choice: &str) -> bool {
+    insert.block.eq_ignore_ascii_case(choice)
+        || (choice.eq_ignore_ascii_case("auto") && super::electrical_layers::is_title_block_insert(drawing, insert))
+}
+fn title_role(tag: &str) -> &str {
+    match tag.trim().to_ascii_uppercase().as_str() {
+        "SHEET" | "FOGLIO" | "TAVOLA" => "NUMFOG",
+        "NSHEET" => "NUMFOGSEG",
+        "SHEETS" => "TOTALE_FOGLI",
+        _ => tag,
+    }
+}
+fn shared_title_layer(name: &str) -> bool {
+    name.eq_ignore_ascii_case("-LOGO") || name.eq_ignore_ascii_case("-CARTIGLIO")
+}
+fn page_attribute(insert: &Insert) -> Option<String> {
+    insert
+        .attribs
+        .iter()
+        .find(|attribute| title_role(&attribute.tag).eq_ignore_ascii_case("NUMFOG"))
+        .map(|attribute| attribute.text.value.trim())
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .map(|value| value.to_string())
+}
+fn title_page(drawing: &Drawing, entity: &Entity, insert: &Insert) -> Option<String> {
+    if num(&entity.common.layer).is_some() && drawing.layer(&entity.common.layer).is_some() {
+        return Some(entity.common.layer.clone());
+    }
+    if !shared_title_layer(&entity.common.layer) {
+        return None;
+    }
+    page_attribute(insert).filter(|page| drawing.layer(page).is_some())
 }
 fn title_key<'a>(name: &str, tag: &'a str) -> Option<&'a str> {
     if !["0UNIA3", "00A3SCHEMI"].iter().any(|known| name.eq_ignore_ascii_case(known)) {
@@ -129,17 +159,25 @@ fn plot_pages(s: &mut Session, p: &Value) -> Result<Value> {
 fn list(s: &mut Session, p: &Value) -> Result<Value> {
     let d = s.doc()?;
     let order = pages(d)?;
-    let mut grouped: BTreeMap<String, (usize, BTreeSet<String>, BTreeMap<String, String>)> =
+    let mut grouped: BTreeMap<String, (usize, BTreeSet<String>, BTreeSet<String>, BTreeMap<String, String>)> =
         order.iter().map(|n| (n.clone(), Default::default())).collect();
     for e in d.model.iter() {
-        let Some((count, blocks, values)) = grouped.get_mut(&e.common.layer) else { continue };
-        *count += 1;
+        if let Some((count, blocks, _, _)) = grouped.get_mut(&e.common.layer) {
+            *count += 1;
+            if let EntityKind::Insert(insert) = &e.kind {
+                blocks.insert(insert.block.clone());
+            }
+        }
         if let EntityKind::Insert(i) = &e.kind {
-            blocks.insert(i.block.clone());
-            if title_matches(&i.block, block(p)) {
+            if title_matches(d, i, block(p))
+                && let Some(page) = title_page(d, e, i)
+                && let Some((_, blocks, title_blocks, values)) = grouped.get_mut(&page)
+            {
                 if i.attribs.len() > 4096 || i.attribs.iter().any(|a| a.text.value.len() > 65_536) {
                     return Err(bad("sheet.list", "Cartiglio troppo grande per il gestore pagine"));
                 }
+                blocks.insert(i.block.clone());
+                title_blocks.insert(i.block.clone());
                 for a in &i.attribs {
                     if let Some(key) = title_key(&i.block, &a.tag) {
                         values.insert(key.into(), a.text.value.clone());
@@ -149,10 +187,10 @@ fn list(s: &mut Session, p: &Value) -> Result<Value> {
         }
     }
     let rows:Vec<_>=order.into_iter().map(|name| {
-        let (count,blocks,values)=grouped.remove(&name).unwrap_or_default();
+        let (count,blocks,title_blocks,values)=grouped.remove(&name).unwrap_or_default();
         let description=|keys:&[&str]| keys.iter().find_map(|k| values.iter().find(|(tag,_)| tag.eq_ignore_ascii_case(k)).map(|(_,v)|v.clone())).unwrap_or_default();
-        let title_blocks: Vec<_> = blocks.iter().filter(|b| title_matches(b, block(p))).cloned().collect();
-        json!({"number":name,"description1":description(&["DESCRIZIONE1","IMPIANTO","COMMESSA1"]),"description2":description(&["DESCRIZIONE2","IMPIANTO2","COMMESSA2"]),"values":values,"blocks":blocks,"titleBlocks":title_blocks,"entities":count})
+        let title_blocks: Vec<_> = title_blocks.into_iter().collect();
+        json!({"number":name,"description1":description(&["DESCRIZIONE1","IMPIANTO","COMMESSA1","OGGETTO1"]),"description2":description(&["DESCRIZIONE2","IMPIANTO2","COMMESSA2","OGGETTO2"]),"values":values,"blocks":blocks,"titleBlocks":title_blocks,"entities":count})
     }).collect();
     Ok(json!({"pages":rows,"current":d.header.str("CLAYER","0")}))
 }
@@ -274,7 +312,37 @@ fn remap(d: &mut Drawing, map: &BTreeMap<String, String>, title: &str) -> Result
     if let Some(n) = map.get(&current) {
         d.header.set_str("CLAYER", n);
     }
+    remap_shared_title_pages(d, map, title)?;
     sync_numbers(d, title)?;
+    Ok(())
+}
+fn remap_shared_title_pages(d: &mut Drawing, map: &BTreeMap<String, String>, title: &str) -> Result<()> {
+    let changes: Vec<_> = d
+        .model
+        .iter()
+        .filter_map(|entity| {
+            let EntityKind::Insert(insert) = &entity.kind else { return None };
+            if !shared_title_layer(&entity.common.layer) || !title_matches(d, insert, title) {
+                return None;
+            }
+            let old = page_attribute(insert)?;
+            map.get(&old).filter(|new| new.as_str() != old).map(|new| (entity.handle, entity.common.layer.clone(), new.clone()))
+        })
+        .collect();
+    if let Some((_, layer, _)) = changes.iter().find(|(_, layer, _)| d.layer(layer).is_some_and(|item| item.locked)) {
+        return Err(bad("sheet", format!("Il cartiglio associato si trova sul layer bloccato {layer}")));
+    }
+    for (handle, _, page) in changes {
+        d.modify_entity(handle, |entity| {
+            if let EntityKind::Insert(insert) = &mut entity.kind {
+                for attribute in &mut insert.attribs {
+                    if !attribute.constant && title_role(&attribute.tag).eq_ignore_ascii_case("NUMFOG") {
+                        attribute.text.value = page.clone();
+                    }
+                }
+            }
+        })?;
+    }
     Ok(())
 }
 fn sync_numbers(d: &mut Drawing, title: &str) -> Result<()> {
@@ -284,19 +352,24 @@ fn sync_numbers(d: &mut Drawing, title: &str) -> Result<()> {
     let handles: Vec<_> = d
         .model
         .iter()
-        .filter(|e| next.contains_key(&e.common.layer) && matches!(&e.kind,EntityKind::Insert(i) if title_matches(&i.block, title)))
-        .map(|e| e.handle)
+        .filter_map(|entity| {
+            let EntityKind::Insert(insert) = &entity.kind else { return None };
+            if !title_matches(d, insert, title) {
+                return None;
+            }
+            let page = title_page(d, entity, insert)?;
+            next.contains_key(&page).then_some((entity.handle, page))
+        })
         .collect();
-    for h in handles {
+    for (h, page) in handles {
         if let Some(e) = d.model.get(h)
             && d.layer(&e.common.layer).is_some_and(|l| l.locked)
             && let EntityKind::Insert(i) = &e.kind
             && i.attribs.iter().any(|a| {
                 !a.constant
-                    && ((title_key(&i.block, &a.tag).is_some_and(|key| key.eq_ignore_ascii_case("NUMFOG")) && a.text.value != e.common.layer)
-                        || (title_key(&i.block, &a.tag).is_some_and(|key| key.eq_ignore_ascii_case("NUMFOGSEG"))
-                            && next.get(&e.common.layer).is_some_and(|n| a.text.value != *n))
-                        || (title_key(&i.block, &a.tag) == Some("TOTALE_FOGLI") && a.text.value != total))
+                    && ((title_role(&a.tag).eq_ignore_ascii_case("NUMFOG") && a.text.value != page)
+                        || (title_role(&a.tag).eq_ignore_ascii_case("NUMFOGSEG") && next.get(&page).is_some_and(|n| a.text.value != *n))
+                        || (title_role(&a.tag).eq_ignore_ascii_case("TOTALE_FOGLI") && a.text.value != total))
             })
         {
             return Err(bad("sheet", "Un cartiglio da rinumerare si trova su un layer bloccato"));
@@ -304,14 +377,14 @@ fn sync_numbers(d: &mut Drawing, title: &str) -> Result<()> {
         d.modify_entity(h, |e| {
             if let EntityKind::Insert(i) = &mut e.kind {
                 for a in &mut i.attribs {
-                    if !a.constant && title_key(&i.block, &a.tag) == Some("TOTALE_FOGLI") {
+                    if !a.constant && title_role(&a.tag).eq_ignore_ascii_case("TOTALE_FOGLI") {
                         a.text.value = total.clone();
                     }
-                    if !a.constant && title_key(&i.block, &a.tag).is_some_and(|key| key.eq_ignore_ascii_case("NUMFOG")) {
-                        a.text.value = e.common.layer.clone();
+                    if !a.constant && title_role(&a.tag).eq_ignore_ascii_case("NUMFOG") {
+                        a.text.value = page.clone();
                     }
-                    if !a.constant && title_key(&i.block, &a.tag).is_some_and(|key| key.eq_ignore_ascii_case("NUMFOGSEG")) {
-                        a.text.value = next.get(&e.common.layer).cloned().unwrap_or_default();
+                    if !a.constant && title_role(&a.tag).eq_ignore_ascii_case("NUMFOGSEG") {
+                        a.text.value = next.get(&page).cloned().unwrap_or_default();
                     }
                 }
             }
@@ -348,6 +421,15 @@ fn move_pages(d: &mut Drawing, p: &Value) -> Result<Value> {
 fn delete(d: &mut Drawing, p: &Value) -> Result<Value> {
     let chosen = selected(d, p)?;
     unlocked(d, &chosen)?;
+    if let Some(entity) = d.model.iter().find(|entity| {
+        let EntityKind::Insert(insert) = &entity.kind else { return false };
+        shared_title_layer(&entity.common.layer)
+            && title_matches(d, insert, block(p))
+            && title_page(d, entity, insert).is_some_and(|page| chosen.contains(&page))
+            && d.layer(&entity.common.layer).is_some_and(|layer| layer.locked)
+    }) {
+        return Err(bad("sheet.delete", format!("Il cartiglio associato si trova sul layer bloccato {}", entity.common.layer)));
+    }
     if d.layouts
         .iter()
         .flat_map(|l| l.entities.iter())
@@ -356,7 +438,20 @@ fn delete(d: &mut Drawing, p: &Value) -> Result<Value> {
     {
         return Err(bad("sheet.delete", "Layer usati anche nei layout o nelle definizioni dei blocchi: eliminazione annullata"));
     }
-    let handles: Vec<_> = d.model.iter().filter(|e| chosen.contains(&e.common.layer)).map(|e| e.handle).collect();
+    let handles: Vec<_> = d
+        .model
+        .iter()
+        .filter(|entity| {
+            if chosen.contains(&entity.common.layer) {
+                return true;
+            }
+            let EntityKind::Insert(insert) = &entity.kind else { return false };
+            shared_title_layer(&entity.common.layer)
+                && title_matches(d, insert, block(p))
+                && title_page(d, entity, insert).is_some_and(|page| chosen.contains(&page))
+        })
+        .map(|e| e.handle)
+        .collect();
     for h in &handles {
         d.remove_entity(*h);
         d.hidden_objects.remove(h);
@@ -422,7 +517,12 @@ fn insert(d: &mut Drawing, p: &Value) -> Result<Value> {
     let copies: Vec<Entity> = d
         .model
         .iter()
-        .filter(|e| e.common.layer == template && matches!(&e.kind,EntityKind::Insert(i) if names.contains(i.block.as_str())))
+        .filter(|entity| {
+            let EntityKind::Insert(insert) = &entity.kind else { return false };
+            names.contains(insert.block.as_str())
+                && (entity.common.layer == template
+                    || (title_matches(d, insert, block(p)) && title_page(d, entity, insert).as_deref() == Some(template)))
+        })
         .map(|e| (**e).clone())
         .collect();
     if copies.is_empty() || copies.len() > 10_000 {
@@ -446,6 +546,7 @@ fn insert(d: &mut Drawing, p: &Value) -> Result<Value> {
         }
     }
     for mut e in copies {
+        let shared = shared_title_layer(&e.common.layer);
         if let EntityKind::Insert(i) = &mut e.kind
             && ["0UNIA3", "00A3SCHEMI"].iter().any(|known| i.block.eq_ignore_ascii_case(known))
         {
@@ -455,7 +556,17 @@ fn insert(d: &mut Drawing, p: &Value) -> Result<Value> {
                 }
             }
         }
-        e.common.layer = temp.clone();
+        if let EntityKind::Insert(insert) = &mut e.kind
+            && shared
+        {
+            for attribute in &mut insert.attribs {
+                if !attribute.constant && title_role(&attribute.tag).eq_ignore_ascii_case("NUMFOG") {
+                    attribute.text.value = temp.clone();
+                }
+            }
+        } else {
+            e.common.layer = temp.clone();
+        }
         d.add(&Space::Model, e.common, e.kind)?;
     }
     let mut sequence = order;
@@ -479,19 +590,29 @@ fn attributes(d: &mut Drawing, p: &Value) -> Result<Value> {
     let hs: Vec<_> = d
         .model
         .iter()
-        .filter(|e| chosen.contains(&e.common.layer) && matches!(&e.kind,EntityKind::Insert(i) if title_matches(&i.block, block(p))))
-        .map(|e| e.handle)
+        .filter_map(|entity| {
+            let EntityKind::Insert(insert) = &entity.kind else { return None };
+            if !title_matches(d, insert, block(p)) {
+                return None;
+            }
+            title_page(d, entity, insert).filter(|page| chosen.contains(page)).map(|page| (entity.handle, page))
+        })
         .collect();
     if hs.is_empty() {
         return Err(bad("sheet.attributes", "Cartiglio non trovato nelle pagine selezionate"));
     }
+    if let Some(entity) =
+        hs.iter().filter_map(|(handle, _)| d.model.get(*handle)).find(|entity| d.layer(&entity.common.layer).is_some_and(|layer| layer.locked))
+    {
+        return Err(bad("sheet.attributes", format!("Il cartiglio si trova sul layer bloccato {}", entity.common.layer)));
+    }
     for page in &chosen {
-        if !hs.iter().any(|h| d.model.get(*h).is_some_and(|e| e.common.layer == *page)) {
+        if !hs.iter().any(|(_, associated)| associated == page) {
             return Err(bad("sheet.attributes", format!("Cartiglio {} assente nella pagina {page}", block(p))));
         }
     }
     let mut changed = 0;
-    for h in hs {
+    for (h, _) in hs {
         d.modify_entity(h, |e| {
             if let EntityKind::Insert(i) = &mut e.kind {
                 for a in &mut i.attribs {

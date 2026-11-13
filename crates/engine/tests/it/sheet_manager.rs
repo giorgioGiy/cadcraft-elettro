@@ -59,6 +59,107 @@ fn list(s: &mut Session) -> Value {
     s.execute("sheet.list", &json!({})).unwrap()
 }
 
+fn move_title_to_shared_layer(s: &mut Session, page: &str, name: &str, layer: &str, sheet: &str) {
+    s.execute("layer.new", &json!({"name":layer})).unwrap();
+    let mut definition = (**s.doc().unwrap().blocks.get("att_tav").unwrap()).clone();
+    definition.name = name.into();
+    s.doc_mut().unwrap().blocks.insert(name.into(), std::sync::Arc::new(definition));
+    let handle = s
+        .doc()
+        .unwrap()
+        .model
+        .iter()
+        .find(|entity| entity.common.layer == page && matches!(&entity.kind, EntityKind::Insert(insert) if insert.block == "att_tav"))
+        .map(|entity| entity.handle)
+        .unwrap();
+    s.doc_mut()
+        .unwrap()
+        .modify_entity(handle, |entity| {
+            entity.common.layer = layer.into();
+            let EntityKind::Insert(insert) = &mut entity.kind else { return };
+            insert.block = name.into();
+            for attribute in &mut insert.attribs {
+                match attribute.tag.as_str() {
+                    "IMPIANTO" => {
+                        attribute.tag = "OGGETTO1".into();
+                        attribute.text.value = "Schema fotovoltaico".into();
+                    }
+                    "IMPIANTO2" => {
+                        attribute.tag = "OGGETTO2".into();
+                        attribute.text.value = "Piano copertura".into();
+                    }
+                    "NUMFOG" => {
+                        attribute.tag = "SHEET".into();
+                        attribute.text.value = sheet.into();
+                    }
+                    "NUMFOGSEG" => {
+                        attribute.tag = "NSHEET".into();
+                        attribute.text.value = String::new();
+                    }
+                    _ => {}
+                }
+            }
+            let Some(template) = insert.attribs.first().cloned() else { return };
+            for (tag, value) in [("SHEETS", "3"), ("COMUNE", "Sarego"), ("DATA", "2026-11-12")] {
+                let mut attribute = template.clone();
+                attribute.tag = tag.into();
+                attribute.text.value = value.into();
+                insert.attribs.push(attribute);
+            }
+        })
+        .unwrap();
+}
+
+fn block_value(s: &Session, block: &str, tag: &str) -> Option<String> {
+    s.doc().ok()?.model.iter().find_map(|entity| {
+        let EntityKind::Insert(insert) = &entity.kind else { return None };
+        (insert.block == block)
+            .then(|| insert.attribs.iter().find(|attribute| attribute.tag == tag).map(|attribute| attribute.text.value.clone()))
+            .flatten()
+    })
+}
+
+#[test]
+fn sg2018_on_logo_layer_uses_sheet_and_exposes_title_fields() {
+    let mut s = drawing();
+    move_title_to_shared_layer(&mut s, "2", "SG2018", "-LOGO", "02");
+
+    let rows = list(&mut s);
+    assert_eq!(rows["pages"][1]["titleBlocks"], json!(["SG2018"]));
+    assert_eq!(rows["pages"][1]["description1"], "Schema fotovoltaico");
+    assert_eq!(rows["pages"][1]["description2"], "Piano copertura");
+    assert_eq!(rows["pages"][1]["values"]["SHEET"], "02");
+    assert_eq!(rows["pages"][1]["values"]["COMUNE"], "Sarego");
+
+    s.execute("sheet.attributes", &json!({"pages":[2],"values":{"OGGETTO1":"Schema FV aggiornato","COMUNE":"Vicenza"}})).unwrap();
+    assert_eq!(block_value(&s, "SG2018", "OGGETTO1").as_deref(), Some("Schema FV aggiornato"));
+    assert_eq!(block_value(&s, "SG2018", "COMUNE").as_deref(), Some("Vicenza"));
+
+    s.execute("sheet.renumber", &json!({"pages":[2],"start":7})).unwrap();
+    assert_eq!(block_value(&s, "SG2018", "SHEET").as_deref(), Some("7"));
+    assert!(
+        s.doc()
+            .unwrap()
+            .model
+            .iter()
+            .any(|entity| { entity.common.layer == "-LOGO" && matches!(&entity.kind, EntityKind::Insert(insert) if insert.block == "SG2018") })
+    );
+}
+
+#[test]
+fn equivalent_title_block_on_cartiglio_layer_is_detected_by_attributes() {
+    let mut s = drawing();
+    move_title_to_shared_layer(&mut s, "3", "PROJECT_FRAME", "-CARTIGLIO", "3");
+
+    let rows = list(&mut s);
+    assert_eq!(rows["pages"][2]["titleBlocks"], json!(["PROJECT_FRAME"]));
+    assert_eq!(rows["pages"][2]["values"]["DATA"], "2026-11-12");
+
+    s.execute("sheet.delete", &json!({"pages":[3]})).unwrap();
+    assert!(block_value(&s, "PROJECT_FRAME", "SHEET").is_none());
+    assert!(s.doc().unwrap().layer("-CARTIGLIO").is_some());
+}
+
 #[test]
 fn combined_title_formats_map_metadata_without_editing_column_attributes() {
     let mut s = drawing();
